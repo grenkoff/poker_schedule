@@ -1,0 +1,119 @@
+{% load i18n %}
+{% load money %}
+
+{% if tournaments %}
+<table>
+    <thead>
+    <tr>
+        <th>
+            <a href="?{% querystring sort=sort_links.room page=None %}"
+               hx-get="?{% querystring sort=sort_links.room page=None %}"
+               hx-target="#tournament-table"
+               hx-push-url="true">
+                {% trans "Room" %}{% if current_sort_key == 'room' %}{% if current_sort_desc %} ↓{% else %} ↑{% endif %}{% endif %}
+            </a>
+        </th>
+        <th>
+            <a href="?{% querystring sort=sort_links.name page=None %}"
+               hx-get="?{% querystring sort=sort_links.name page=None %}"
+               hx-target="#tournament-table"
+               hx-push-url="true">
+                {% trans "Name" %}{% if current_sort_key == 'name' %}{% if current_sort_desc %} ↓{% else %} ↑{% endif %}{% endif %}
+            </a>
+        </th>
+        <th>{% trans "Game" %}</th>
+        <th>{% trans "Format" %}</th>
+        <th>{% trans "Size" %}</th>
+        <th>
+            <a href="?{% querystring sort=sort_links.buy_in page=None %}"
+               hx-get="?{% querystring sort=sort_links.buy_in page=None %}"
+               hx-target="#tournament-table"
+               hx-push-url="true">
+                {% trans "Buy-in" %}{% if current_sort_key == 'buy_in' %}{% if current_sort_desc %} ↓{% else %} ↑{% endif %}{% endif %}
+            </a>
+        </th>
+        <th>
+            <a href="?{% querystring sort=sort_links.start_at page=None %}"
+               hx-get="?{% querystring sort=sort_links.start_at page=None %}"
+               hx-target="#tournament-table"
+               hx-push-url="true">
+                {% trans "Start (UTC)" %}{% if current_sort_key == 'start_at' %}{% if current_sort_desc %} ↓{% else %} ↑{% endif %}{% endif %}
+            </a>
+        </th>
+        <th>
+            <a href="?{% querystring sort=sort_links.late_reg page=None %}"
+               hx-get="?{% querystring sort=sort_links.late_reg page=None %}"
+               hx-target="#tournament-table"
+               hx-push-url="true">
+                {% trans "Late reg" %}{% if current_sort_key == 'late_reg' %}{% if current_sort_desc %} ↓{% else %} ↑{% endif %}{% endif %}
+            </a>
+        </th>
+        <th>{% trans "Final table" %}</th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for t in tournaments %}
+    <tr>
+        <td>{{ t.room.name }}</td>
+        <td>{{ t.name }}</td>
+        <td><span class="tag">{{ t.get_game_type_display }}</span></td>
+        <td>{{ t.get_tournament_format_display }}</td>
+        <td>{{ t.get_table_size_display }}</td>
+        <td class="buy-in">
+            {{ t.buy_in_cents|money:t.currency }}{% if t.rake_cents %}
+                <span class="muted">+ {{ t.rake_cents|money:t.currency }}</span>
+            {% endif %}
+        </td>
+        <td>{{ t.start_at|date:"Y-m-d H:i" }}</td>
+        <td>
+            {% if t.late_reg_minutes %}
+                {% blocktrans with minutes=t.late_reg_minutes %}{{ minutes }} min{% endblocktrans %}
+            {% else %}
+                <span class="muted">—</span>
+            {% endif %}
+        </td>
+        <td>
+            {{ t.final_table_size }}{% if t.blind_reset_at_final %}
+                <span class="tag" title="{% trans 'Blind reset at final table' %}">{% trans "reset" %}{% if t.blind_reset_level %} L{{ t.blind_reset_level }}{% endif %}</span>
+            {% endif %}
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+{% if page_obj.has_other_pages %}
+<nav class="pagination">
+    {% if page_obj.has_previous %}
+        <a href="?{% querystring page=page_obj.previous_page_number %}"
+           hx-get="?{% querystring page=page_obj.previous_page_number %}"
+           hx-target="#tournament-table"
+           hx-push-url="true">← {% trans "Previous" %}</a>
+    {% else %}
+        <span class="muted">← {% trans "Previous" %}</span>
+    {% endif %}
+    <span class="current">
+        {% blocktrans with current=page_obj.number total=page_obj.paginator.num_pages %}Page {{ current }} of {{ total }}{% endblocktrans %}
+    </span>
+    {% if page_obj.has_next %}
+        <a href="?{% querystring page=page_obj.next_page_number %}"
+           hx-get="?{% querystring page=page_obj.next_page_number %}"
+           hx-target="#tournament-table"
+           hx-push-url="true">{% trans "Next" %} →</a>
+    {% else %}
+        <span class="muted">{% trans "Next" %} →</span>
+    {% endif %}
+</nav>
+{% endif %}
+
+{% else %}
+<div class="empty">
+    {% if has_filters_applied %}
+        <p>{% trans "No tournaments match these filters." %}</p>
+        <p class="muted">{% trans "Try relaxing the criteria." %}</p>
+    {% else %}
+        <p>{% trans "No upcoming tournaments yet." %}</p>
+        <p class="muted">{% blocktrans %}Run <code>manage.py scrape_room pokerok</code> or add a tournament via the admin.{% endblocktrans %}</p>
+    {% endif %}
+</div>
+{% endif %}

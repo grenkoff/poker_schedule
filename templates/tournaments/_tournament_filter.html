@@ -1,0 +1,33 @@
+{% load i18n %}
+<form method="get"
+      class="filter-form"
+      hx-get="{% url 'tournaments:list' %}"
+      hx-target="#tournament-table"
+      hx-push-url="true"
+      hx-indicator="#filter-loading">
+
+    <div class="filter-grid">
+        {% for field in filterset.form.visible_fields %}
+            <div class="filter-field filter-field--{{ field.name }}">
+                <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.errors %}<p class="field-error">{{ field.errors.0 }}</p>{% endif %}
+            </div>
+        {% endfor %}
+    </div>
+
+    {# Preserve the active sort when re-submitting the filter form #}
+    {% if request.GET.sort %}
+        <input type="hidden" name="sort" value="{{ request.GET.sort }}">
+    {% endif %}
+
+    <div class="filter-actions">
+        <button type="submit">{% trans "Apply filters" %}</button>
+        <a href="{% url 'tournaments:list' %}"
+           hx-get="{% url 'tournaments:list' %}"
+           hx-target="#tournament-table"
+           hx-push-url="true"
+           class="btn-secondary">{% trans "Reset" %}</a>
+        <span id="filter-loading" class="htmx-indicator">{% trans "Loading…" %}</span>
+    </div>
+</form>

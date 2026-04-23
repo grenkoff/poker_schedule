@@ -81,8 +81,93 @@
         }
         .pagination a:hover { color: #1a1a1a; }
         .pagination .current { font-weight: 600; color: #1a1a1a; }
-        select, button { font-size: 0.925rem; padding: 0.3rem 0.5rem; }
+        select, button, input[type="text"], input[type="number"], input[type="datetime-local"] {
+            font-size: 0.925rem;
+            padding: 0.3rem 0.5rem;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+        }
+        thead th a { color: #555; text-decoration: none; }
+        thead th a:hover { color: #1a1a1a; }
+
+        details.filters {
+            margin-bottom: 1.5rem;
+            border: 1px solid #eee;
+            border-radius: 6px;
+            padding: 0.5rem 1rem;
+            background: #fafafa;
+        }
+        details.filters > summary {
+            cursor: pointer;
+            font-weight: 600;
+            padding: 0.35rem 0;
+        }
+        details.filters[open] > summary { border-bottom: 1px solid #eee; margin-bottom: 1rem; }
+
+        .filter-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .filter-field label {
+            display: block;
+            font-size: 0.825rem;
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 0.25rem;
+        }
+        .filter-field input[type="number"],
+        .filter-field input[type="datetime-local"],
+        .filter-field select {
+            width: 100%;
+        }
+        .filter-field ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.25rem 0.75rem;
+        }
+        .filter-field ul li label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-weight: 400;
+            margin: 0;
+            font-size: 0.9rem;
+            color: #1a1a1a;
+        }
+
+        .filter-actions {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+        }
+        .filter-actions button {
+            background: #1a1a1a;
+            color: #fff;
+            border: none;
+            padding: 0.4rem 1rem;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .filter-actions .btn-secondary {
+            color: #555;
+            text-decoration: none;
+            padding: 0.4rem 0.75rem;
+        }
+        .filter-actions .btn-secondary:hover { color: #1a1a1a; }
+        .htmx-indicator {
+            visibility: hidden;
+            color: #888;
+            font-size: 0.875rem;
+        }
+        .htmx-request .htmx-indicator { visibility: visible; }
+        .field-error { color: #c33; font-size: 0.825rem; margin-top: 0.25rem; }
     </style>
+    <script src="https://unpkg.com/htmx.org@2.0.4" crossorigin="anonymous" defer></script>
     {% block extra_head %}{% endblock %}
 </head>
 <body>
