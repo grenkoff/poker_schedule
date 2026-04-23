@@ -21,12 +21,14 @@ def test_root_redirects_to_default_language(client: Client) -> None:
     assert response["Location"].startswith("/en/")
 
 
+@pytest.mark.django_db
 def test_home_renders_in_english(client: Client) -> None:
     response = client.get("/en/")
     assert response.status_code == 200
     assert b"Poker Schedule" in response.content
 
 
+@pytest.mark.django_db
 @pytest.mark.parametrize(
     "lang_prefix",
     ["en", "ru", "es", "pt-br", "de", "fr", "zh-hans", "ja", "ko", "uk"],
