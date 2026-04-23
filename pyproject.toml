@@ -39,8 +39,9 @@ select = [
     "RUF",           # ruff-specific
 ]
 ignore = [
-    "S101",  # assert in tests is fine
-    "E501",  # line length handled by formatter
+    "S101",    # assert in tests is fine
+    "E501",    # line length handled by formatter
+    "RUF012",  # Django Meta.constraints / ModelAdmin.prepopulated_fields etc. are declarations
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -67,3 +68,10 @@ DJANGO_SETTINGS_MODULE = "config.settings.dev"
 python_files = ["test_*.py", "*_test.py", "tests.py"]
 addopts = "-ra --strict-markers"
 testpaths = ["apps", "tests"]
+filterwarnings = [
+    # Django 6.0 flips URLField's default scheme from http to https. The
+    # transitional opt-in setting is itself already deprecated, so there is
+    # no single flag that silences this today — reassess when we bump to
+    # Django 6.0 and pass `assume_scheme="https"` where needed.
+    "ignore::django.utils.deprecation.RemovedInDjango60Warning",
+]
