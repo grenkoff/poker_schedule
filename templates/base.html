@@ -1,0 +1,37 @@
+{% load i18n %}<!DOCTYPE html>
+<html lang="{{ LANGUAGE_CODE }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{% trans "Poker Schedule" %}{% endblock %}</title>
+    {% get_available_languages as LANGUAGES %}
+    {% get_language_info_list for LANGUAGES as languages %}
+    {% for lang in languages %}
+        <link rel="alternate" hreflang="{{ lang.code }}" href="/{{ lang.code }}/">
+    {% endfor %}
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <header>
+        <nav>
+            <a href="{% url 'home' %}">{% trans "Home" %}</a>
+            <form action="{% url 'set_language' %}" method="post" style="display:inline">
+                {% csrf_token %}
+                <input name="next" type="hidden" value="{{ request.get_full_path }}">
+                <select name="language" onchange="this.form.submit()">
+                    {% get_current_language as CURRENT_LANGUAGE %}
+                    {% for lang in languages %}
+                        <option value="{{ lang.code }}"
+                                {% if lang.code == CURRENT_LANGUAGE %}selected{% endif %}>
+                            {{ lang.name_local }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </form>
+        </nav>
+    </header>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>
