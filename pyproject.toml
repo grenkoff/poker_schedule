@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "django>=5.1,<5.2",
     "django-environ>=0.11",
+    "django-filter>=24.3",
     "psycopg[binary]>=3.2",
     "gunicorn>=23.0",
     "whitenoise>=6.7",
@@ -58,6 +59,10 @@ exclude = ["migrations", ".venv"]
 
 [[tool.mypy.overrides]]
 module = "environ.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "django_filters.*"
 ignore_missing_imports = true
 
 [tool.django-stubs]
