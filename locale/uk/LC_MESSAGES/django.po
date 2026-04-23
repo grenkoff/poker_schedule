@@ -1,0 +1,89 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-04-23 21:05+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=4; plural=(n % 1 == 0 && n % 10 == 1 && n % 100 != "
+"11 ? 0 : n % 1 == 0 && n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % "
+"100 > 14) ? 1 : n % 1 == 0 && (n % 10 ==0 || (n % 10 >=5 && n % 10 <=9) || "
+"(n % 100 >=11 && n % 100 <=14 )) ? 2: 3);\n"
+#: apps/analytics/apps.py:8
+msgid "Analytics"
+msgstr ""
+
+#: apps/exports/apps.py:8
+msgid "Exports"
+msgstr ""
+
+#: apps/filters/apps.py:8
+msgid "Filters"
+msgstr ""
+
+#: apps/rooms/apps.py:8
+msgid "Poker rooms"
+msgstr ""
+
+#: apps/scrapers/apps.py:8
+msgid "Scrapers"
+msgstr ""
+
+#: apps/tournaments/apps.py:8
+msgid "Tournaments"
+msgstr ""
+
+#: apps/users/admin.py:11
+msgid "Profile"
+msgstr ""
+
+#: apps/users/apps.py:8
+msgid "Users"
+msgstr ""
+
+#: apps/users/models.py:24
+msgid "timezone"
+msgstr ""
+
+#: apps/users/models.py:27
+msgid "IANA timezone name, e.g. Europe/Moscow."
+msgstr ""
+
+#: apps/users/models.py:30
+msgid "preferred language"
+msgstr ""
+
+#: apps/users/models.py:37
+msgid "user"
+msgstr ""
+
+#: apps/users/models.py:38
+msgid "users"
+msgstr ""
+
+#: config/urls.py:21 templates/base.html:6 templates/home.html:7
+msgid "Poker Schedule"
+msgstr ""
+
+#: templates/base.html:17
+msgid "Home"
+msgstr ""
+
+#: templates/home.html:8
+msgid "Aggregated online poker tournaments from multiple rooms."
+msgstr ""
+
+#: templates/home.html:9
+msgid "Coming soon: filters, sharing, and PDF export."
+msgstr ""

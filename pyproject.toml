@@ -1,0 +1,69 @@
+[project]
+name = "poker-schedule"
+version = "0.1.0"
+description = "Aggregates online poker tournaments from multiple rooms, filters and exports them."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "django>=5.1,<5.2",
+    "django-environ>=0.11",
+    "psycopg[binary]>=3.2",
+    "gunicorn>=23.0",
+    "whitenoise>=6.7",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.7",
+    "mypy>=1.13",
+    "django-stubs[compatible-mypy]>=5.1",
+    "pytest>=8.3",
+    "pytest-django>=4.9",
+    "pytest-cov>=6.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["migrations", "locale"]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",   # pycodestyle + pyflakes
+    "I",             # isort
+    "B",             # bugbear
+    "UP",            # pyupgrade
+    "DJ",            # django-specific
+    "S",             # bandit
+    "SIM",           # simplify
+    "RUF",           # ruff-specific
+]
+ignore = [
+    "S101",  # assert in tests is fine
+    "E501",  # line length handled by formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S"]
+"**/settings/**" = ["S105", "F403", "F405"]
+
+[tool.mypy]
+python_version = "3.12"
+strict_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+plugins = ["mypy_django_plugin.main"]
+exclude = ["migrations", ".venv"]
+
+[[tool.mypy.overrides]]
+module = "environ.*"
+ignore_missing_imports = true
+
+[tool.django-stubs]
+django_settings_module = "config.settings.dev"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.dev"
+python_files = ["test_*.py", "*_test.py", "tests.py"]
+addopts = "-ra --strict-markers"
+testpaths = ["apps", "tests"]
