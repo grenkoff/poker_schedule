@@ -37,7 +37,7 @@
                hx-get="?{% querystring sort=sort_links.start_at page=None %}"
                hx-target="#tournament-table"
                hx-push-url="true">
-                {% trans "Start (UTC)" %}{% if current_sort_key == 'start_at' %}{% if current_sort_desc %} ↓{% else %} ↑{% endif %}{% endif %}
+                {% trans "Start" %}{% if current_sort_key == 'start_at' %}{% if current_sort_desc %} ↓{% else %} ↑{% endif %}{% endif %}
             </a>
         </th>
         <th>
@@ -64,7 +64,7 @@
                 <span class="muted">+ {{ t.rake_cents|money:t.currency }}</span>
             {% endif %}
         </td>
-        <td>{{ t.start_at|date:"Y-m-d H:i" }}</td>
+        <td>{{ t.start_at|date:"Y-m-d H:i" }} <span class="muted">{{ t.start_at|date:"T" }}</span></td>
         <td>
             {% if t.late_reg_minutes %}
                 {% blocktrans with minutes=t.late_reg_minutes %}{{ minutes }} min{% endblocktrans %}

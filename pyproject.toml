@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "django>=5.1,<5.2",
+    "django-allauth>=65.0",
     "django-environ>=0.11",
     "django-filter>=24.3",
     "psycopg[binary]>=3.2",
@@ -47,6 +48,8 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S"]
+"**/tests.py" = ["S"]
+"**/test_*.py" = ["S"]
 "**/settings/**" = ["S105", "F403", "F405"]
 
 [tool.mypy]
@@ -63,6 +66,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "django_filters.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "allauth.*"
 ignore_missing_imports = true
 
 [tool.django-stubs]
