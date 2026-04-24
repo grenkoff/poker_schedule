@@ -22,11 +22,16 @@ DJANGO_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.sites",
 ]
 
 THIRD_PARTY_APPS: list[str] = [
     "django_filters",
+    "allauth",
+    "allauth.account",
 ]
+
+SITE_ID = 1
 
 LOCAL_APPS = [
     "apps.users",
@@ -47,8 +52,10 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.users.middleware.UserTimezoneMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "allauth.account.middleware.AccountMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -80,6 +87,29 @@ DATABASES = {
 }
 
 AUTH_USER_MODEL = "users.User"
+
+AUTHENTICATION_BACKENDS = [
+    # Django's default backend keeps staff/admin login working.
+    "django.contrib.auth.backends.ModelBackend",
+    # allauth drives the email-based signup/login flow for end users.
+    "allauth.account.auth_backends.AuthenticationBackend",
+]
+
+# --- allauth -------------------------------------------------------------
+# Email is the login identity. `username` still exists on the User model
+# (inherited from AbstractUser) and allauth auto-generates one on signup,
+# so existing migrations and the admin don't need to change.
+ACCOUNT_LOGIN_METHODS = {"email"}
+ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*", "password2*"]
+ACCOUNT_UNIQUE_EMAIL = True
+# Options: "none" | "optional" | "mandatory". `optional` lets users sign in
+# right away and still sends a verification email; flip to "mandatory" in
+# prod once a real SMTP provider is wired up.
+ACCOUNT_EMAIL_VERIFICATION = env("ACCOUNT_EMAIL_VERIFICATION", default="optional")
+ACCOUNT_DEFAULT_HTTP_PROTOCOL = env("ACCOUNT_DEFAULT_HTTP_PROTOCOL", default="https")
+LOGIN_URL = "account_login"
+LOGIN_REDIRECT_URL = "/"
+ACCOUNT_LOGOUT_REDIRECT_URL = "/"
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},

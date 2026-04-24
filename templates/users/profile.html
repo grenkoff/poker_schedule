@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Your profile" %} — {% trans "Poker Schedule" %}{% endblock %}
+
+{% block content %}
+<h1>{% trans "Your profile" %}</h1>
+
+<p class="muted">{% trans "Signed in as" %} <strong>{{ request.user.email|default:request.user.username }}</strong></p>
+
+{% if messages %}
+    {% for msg in messages %}
+        <p class="flash flash-{{ msg.tags }}">{{ msg }}</p>
+    {% endfor %}
+{% endif %}
+
+<form method="post" class="profile-form">
+    {% csrf_token %}
+    <div class="filter-field">
+        <label for="{{ form.timezone.id_for_label }}">{{ form.timezone.label }}</label>
+        {{ form.timezone }}
+        <datalist id="tz-suggestions">
+            {% for tz in timezone_suggestions %}
+                <option value="{{ tz }}">
+            {% endfor %}
+        </datalist>
+        {% if form.timezone.errors %}<p class="field-error">{{ form.timezone.errors.0 }}</p>{% endif %}
+        <p class="muted" style="font-size:0.825rem">{% trans "Any IANA name, e.g. Europe/Moscow or America/New_York." %}</p>
+    </div>
+
+    <div class="filter-field">
+        <label for="{{ form.preferred_language.id_for_label }}">{{ form.preferred_language.label }}</label>
+        {{ form.preferred_language }}
+        {% if form.preferred_language.errors %}<p class="field-error">{{ form.preferred_language.errors.0 }}</p>{% endif %}
+    </div>
+
+    <div class="filter-actions">
+        <button type="submit">{% trans "Save" %}</button>
+    </div>
+</form>
+{% endblock %}
