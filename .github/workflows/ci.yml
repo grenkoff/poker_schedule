@@ -60,8 +60,13 @@ jobs:
       DJANGO_DEBUG: "True"
     steps:
       - uses: actions/checkout@v4
-      - name: Install system gettext
-        run: sudo apt-get update && sudo apt-get install -y gettext
+      - name: Install system deps (gettext for i18n, WeasyPrint's pango/cairo chain for PDF export)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gettext \
+            libpango-1.0-0 libpangoft2-1.0-0 \
+            libharfbuzz0b libfontconfig1
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true

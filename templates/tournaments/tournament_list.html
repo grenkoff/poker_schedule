@@ -4,7 +4,22 @@
 {% block title %}{% trans "Upcoming tournaments" %} — {% trans "Poker Schedule" %}{% endblock %}
 
 {% block content %}
-<h1>{% trans "Upcoming tournaments" %}</h1>
+<div class="page-header">
+    <h1>{% trans "Upcoming tournaments" %}</h1>
+    <div class="page-actions">
+        <a href="{% url 'exports:pdf' %}?{{ request.GET.urlencode }}"
+           class="btn-secondary">{% trans "Download PDF" %}</a>
+        <form action="{% url 'filters:create_share' %}" method="post" style="display:inline">
+            {% csrf_token %}
+            {% for key, values in request.GET.lists %}
+                {% for val in values %}
+                    <input type="hidden" name="{{ key }}" value="{{ val }}">
+                {% endfor %}
+            {% endfor %}
+            <button type="submit" class="btn-secondary">{% trans "Share this view" %}</button>
+        </form>
+    </div>
+</div>
 
 <details class="filters" {% if has_filters_applied %}open{% endif %}>
     <summary>{% trans "Filters" %}</summary>

@@ -24,6 +24,8 @@ urlpatterns = [
 urlpatterns += i18n_patterns(
     path("accounts/", include("allauth.urls")),
     path("profile/", include("apps.users.urls")),
+    path("export/", include("apps.exports.urls")),
+    path("", include("apps.filters.urls")),
     path("", include("apps.tournaments.urls")),
     prefix_default_language=True,
 )
