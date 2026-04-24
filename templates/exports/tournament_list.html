@@ -1,0 +1,127 @@
+{% load i18n %}
+{% load money %}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Poker Schedule — {{ generated_at|date:"Y-m-d" }}</title>
+    <style>
+        @page {
+            size: A4 landscape;
+            margin: 15mm;
+            @bottom-right {
+                content: "{% trans 'Page' %} " counter(page) " / " counter(pages);
+                font-size: 9pt;
+                color: #888;
+            }
+            @bottom-left {
+                content: "poker-schedule · {{ generated_at|date:'Y-m-d H:i T' }}";
+                font-size: 9pt;
+                color: #888;
+            }
+        }
+        body {
+            font-family: "Helvetica", "Arial", sans-serif;
+            color: #1a1a1a;
+            font-size: 9pt;
+            line-height: 1.35;
+        }
+        h1 { font-size: 16pt; margin: 0 0 0.4rem; }
+        .meta { color: #666; font-size: 9pt; margin-bottom: 1rem; }
+        .filters {
+            background: #f5f5f5;
+            padding: 0.5rem 0.75rem;
+            margin-bottom: 1rem;
+            border-left: 3px solid #aaa;
+            font-size: 8.5pt;
+        }
+        .filters strong { color: #555; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: auto;
+        }
+        th, td {
+            padding: 5pt 6pt;
+            text-align: left;
+            border-bottom: 0.5pt solid #ddd;
+            vertical-align: top;
+        }
+        th {
+            background: #eee;
+            font-weight: 600;
+            font-size: 7.5pt;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+        }
+        .muted { color: #999; }
+        .tag {
+            display: inline-block;
+            padding: 1pt 4pt;
+            border-radius: 2pt;
+            background: #e7e7f0;
+            font-size: 7.5pt;
+        }
+        .count { color: #666; }
+        tr { page-break-inside: avoid; }
+    </style>
+</head>
+<body>
+    <h1>Poker Schedule</h1>
+    <div class="meta">
+        {% blocktrans with when=generated_at|date:"Y-m-d H:i T" %}Generated {{ when }}{% endblocktrans %}
+        · <span class="count">{{ total_count }} {% trans "tournament(s)" %}</span>
+    </div>
+
+    {% if active_filters %}
+    <div class="filters">
+        {% for label, value in active_filters %}
+            <strong>{{ label }}:</strong> {{ value }}{% if not forloop.last %} · {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if tournaments %}
+    <table>
+        <thead>
+        <tr>
+            <th>{% trans "Room" %}</th>
+            <th>{% trans "Name" %}</th>
+            <th>{% trans "Game" %}</th>
+            <th>{% trans "Format" %}</th>
+            <th>{% trans "Size" %}</th>
+            <th>{% trans "Buy-in" %}</th>
+            <th>{% trans "Start" %}</th>
+            <th>{% trans "Late reg" %}</th>
+            <th>{% trans "FT" %}</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for t in tournaments %}
+        <tr>
+            <td>{{ t.room.name }}</td>
+            <td>{{ t.name }}</td>
+            <td><span class="tag">{{ t.get_game_type_display }}</span></td>
+            <td>{{ t.get_tournament_format_display }}</td>
+            <td>{{ t.get_table_size_display }}</td>
+            <td>
+                {{ t.buy_in_cents|money:t.currency }}{% if t.rake_cents %}
+                    <span class="muted">+ {{ t.rake_cents|money:t.currency }}</span>
+                {% endif %}
+            </td>
+            <td>{{ t.start_at|date:"Y-m-d H:i T" }}</td>
+            <td>{% if t.late_reg_minutes %}{{ t.late_reg_minutes }}m{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td>
+                {{ t.final_table_size }}{% if t.blind_reset_at_final %}
+                    <span class="tag">reset{% if t.blind_reset_level %} L{{ t.blind_reset_level }}{% endif %}</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="muted">{% trans "No tournaments match these filters." %}</p>
+    {% endif %}
+</body>
+</html>

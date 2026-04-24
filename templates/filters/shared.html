@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Shared tournament list" %} — {% trans "Poker Schedule" %}{% endblock %}
+
+{% block content %}
+<h1>{% trans "Shared tournament list" %}</h1>
+
+<div class="shared-meta">
+    {% if shared_by %}
+        <p class="muted">
+            {% blocktrans with who=shared_by when=shared.created_at|date:"Y-m-d H:i T" %}Shared by {{ who }} · {{ when }}{% endblocktrans %}
+        </p>
+    {% else %}
+        <p class="muted">
+            {% blocktrans with when=shared.created_at|date:"Y-m-d H:i T" %}Shared {{ when }}{% endblocktrans %}
+        </p>
+    {% endif %}
+    <p class="muted">
+        <a href="{% url 'tournaments:list' %}">{% trans "Go to the full list →" %}</a>
+        {% if request.GET.urlencode %}
+        <a href="{% url 'exports:pdf' %}?{{ shared.filter_params }}" class="nav-link">{% trans "Download PDF" %}</a>
+        {% else %}
+        <a href="{% url 'exports:pdf' %}?{{ shared.filter_params }}" class="nav-link">{% trans "Download PDF" %}</a>
+        {% endif %}
+    </p>
+</div>
+
+<div id="tournament-table">
+    {% include "tournaments/_tournament_table.html" %}
+</div>
+{% endblock %}
