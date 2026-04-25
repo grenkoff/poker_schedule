@@ -1,7 +1,8 @@
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.models import UserManager as DjangoUserManager
+from django.core.exceptions import ValidationError
 from django.core.management.base import CommandError
-from django.db import models, transaction
+from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 # Subset of supported language codes — kept in sync with
@@ -30,8 +31,9 @@ class Role(models.TextChoices):
         or verify their own work.
     SUPERADMIN — full access including user management and final
         verification. Maps onto Django's `is_superuser=True`. **Exactly
-        one** SUPERADMIN may exist at any time; promoting another user
-        auto-demotes the previous one to ADMIN.
+        one SUPERADMIN exists for the lifetime of the project**: once
+        assigned, the role cannot be transferred, taken away, or deleted.
+        The first `manage.py createsuperuser` claims it and that's it.
 
     `User.save()` derives `is_staff` and `is_superuser` from this field, so
     the role is the single source of truth for access decisions.
@@ -50,8 +52,8 @@ class UserManager(DjangoUserManager):
     def create_superuser(self, username, email=None, password=None, **extra_fields):
         if self.filter(role=Role.SUPERADMIN).exists():
             raise CommandError(
-                "A SUPERADMIN already exists. Demote them via the admin "
-                "(or delete them) before creating another."
+                "A SUPERADMIN already exists. The role is permanent — "
+                "only one ever exists for the lifetime of the project."
             )
         extra_fields.setdefault("role", Role.SUPERADMIN)
         return super().create_superuser(username, email, password, **extra_fields)
@@ -108,28 +110,43 @@ class User(AbstractUser):
             self.is_staff = False
             self.is_superuser = False
 
-        if self.role == Role.SUPERADMIN:
-            # Atomic handover: any other SUPERADMIN drops to ADMIN before
-            # we land. `.update()` keeps it to a single SQL statement and
-            # avoids recursing into save().
-            with transaction.atomic():
-                others = User.objects.filter(role=Role.SUPERADMIN)
-                if self.pk:
-                    others = others.exclude(pk=self.pk)
-                others.update(role=Role.ADMIN, is_staff=True, is_superuser=False)
-                super().save(*args, **kwargs)
-        else:
-            super().save(*args, **kwargs)
+        self._enforce_superadmin_invariants()
+        super().save(*args, **kwargs)
+
+    def _enforce_superadmin_invariants(self) -> None:
+        """SUPERADMIN is permanent and singular.
+
+        - It cannot be moved off the user who currently holds it.
+        - It cannot be assigned to anyone else once held.
+
+        Raised as ValidationError so admin form validation surfaces it
+        cleanly; programmatic callers get the same exception.
+        """
+        prior_role: str | None = None
+        if self.pk:
+            prior = User.objects.filter(pk=self.pk).only("role").first()
+            prior_role = prior.role if prior else None
+
+        # The current SUPERADMIN cannot demote themselves.
+        if prior_role == Role.SUPERADMIN and self.role != Role.SUPERADMIN:
+            raise ValidationError(
+                {"role": _("The SUPERADMIN role is permanent and cannot be removed.")}
+            )
+
+        # No-one else can be promoted to SUPERADMIN once one exists.
+        if self.role == Role.SUPERADMIN and prior_role != Role.SUPERADMIN:
+            existing = User.objects.filter(role=Role.SUPERADMIN)
+            if self.pk:
+                existing = existing.exclude(pk=self.pk)
+            if existing.exists():
+                raise ValidationError(
+                    {"role": _("A SUPERADMIN already exists. The role cannot be transferred.")}
+                )
 
     def delete(self, *args, **kwargs):
-        # Refuse to delete the sole SUPERADMIN — by the invariant, the
-        # current SUPERADMIN is always the sole one. Demote first, then
-        # delete (the demoted user becomes a normal ADMIN row that's
-        # safe to remove).
+        # The SUPERADMIN is permanent — no demote, no delete.
         if self.role == Role.SUPERADMIN:
             raise PermissionError(
-                "Cannot delete the SUPERADMIN. Promote another user to "
-                "SUPERADMIN first (which auto-demotes this account), then "
-                "delete it."
+                "The SUPERADMIN account cannot be deleted — the role is permanent."
             )
         return super().delete(*args, **kwargs)
