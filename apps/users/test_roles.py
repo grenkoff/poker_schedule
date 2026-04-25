@@ -71,7 +71,10 @@ def test_superadmin_role_grants_both_flags():
 
 
 @pytest.mark.django_db
-def test_role_transition_promotes_and_demotes_flags():
+def test_role_transitions_promote_flags_one_way():
+    """USER → ADMIN → SUPERADMIN sets the matching flags. The reverse
+    (SUPERADMIN → ADMIN/USER) is rejected by the permanent-superadmin
+    invariant — see test_single_superadmin.test_superadmin_cannot_demote_themselves."""
     u = User.objects.create_user(username="u", email="u@example.com", password="x")
     assert u.is_staff is False
 
@@ -80,15 +83,17 @@ def test_role_transition_promotes_and_demotes_flags():
     assert u.is_staff is True
     assert u.is_superuser is False
 
-    u.role = Role.SUPERADMIN
-    u.save()
-    assert u.is_staff is True
-    assert u.is_superuser is True
-
+    # Demote ADMIN back to USER — allowed; the SUPERADMIN protection
+    # only fires when role is moving off SUPERADMIN.
     u.role = Role.USER
     u.save()
     assert u.is_staff is False
     assert u.is_superuser is False
+
+    u.role = Role.SUPERADMIN
+    u.save()
+    assert u.is_staff is True
+    assert u.is_superuser is True
 
 
 @pytest.mark.django_db

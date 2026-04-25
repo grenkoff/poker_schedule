@@ -34,12 +34,27 @@ class UserAdmin(SuperuserOnlyAdminMixin, DjangoUserAdmin):
     list_filter = (*DjangoUserAdmin.list_filter, "role")
 
     def has_delete_permission(self, request, obj=None):
-        # The sole SUPERADMIN can never be deleted directly. Promote
-        # someone else first (which auto-demotes this account), then
-        # delete the now-ADMIN row.
+        # The SUPERADMIN account is permanent — no path to remove it.
         if obj is not None and obj.role == Role.SUPERADMIN:
             return False
         return super().has_delete_permission(request, obj)
+
+    def get_readonly_fields(self, request, obj=None):
+        ro = list(super().get_readonly_fields(request, obj))
+        # The SUPERADMIN cannot demote themselves; lock the role field
+        # on their own row so the form can't even submit a different value.
+        if obj is not None and obj.role == Role.SUPERADMIN:
+            ro.append("role")
+        return ro
+
+    def formfield_for_choice_field(self, db_field, request, **kwargs):
+        # Once a SUPERADMIN exists, hide that option from the role
+        # dropdown for everyone else (add-form and other change-forms).
+        # The current SUPERADMIN's row gets `role` as readonly above, so
+        # this filter doesn't affect that view.
+        if db_field.name == "role" and User.objects.filter(role=Role.SUPERADMIN).exists():
+            kwargs["choices"] = [c for c in Role.choices if c[0] != Role.SUPERADMIN]
+        return super().formfield_for_choice_field(db_field, request, **kwargs)
 
 
 # Group / Site / EmailAddress / EmailConfirmation are all infra concerns —
