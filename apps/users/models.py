@@ -1,6 +1,7 @@
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.models import UserManager as DjangoUserManager
-from django.db import models
+from django.core.management.base import CommandError
+from django.db import models, transaction
 from django.utils.translation import gettext_lazy as _
 
 # Subset of supported language codes — kept in sync with
@@ -28,7 +29,9 @@ class Role(models.TextChoices):
         submit edits for verification by SUPERADMIN. Cannot manage users
         or verify their own work.
     SUPERADMIN — full access including user management and final
-        verification. Maps onto Django's `is_superuser=True`.
+        verification. Maps onto Django's `is_superuser=True`. **Exactly
+        one** SUPERADMIN may exist at any time; promoting another user
+        auto-demotes the previous one to ADMIN.
 
     `User.save()` derives `is_staff` and `is_superuser` from this field, so
     the role is the single source of truth for access decisions.
@@ -40,10 +43,16 @@ class Role(models.TextChoices):
 
 
 class UserManager(DjangoUserManager):
-    """Inject `role=SUPERADMIN` so `manage.py createsuperuser` users get
-    the matching role label and survive the `User.save()` flag-sync."""
+    """`createsuperuser` injects `role=SUPERADMIN` and enforces the
+    one-superadmin invariant up-front so the CLI fails with a friendly
+    `CommandError` instead of an `IntegrityError` from the DB constraint."""
 
     def create_superuser(self, username, email=None, password=None, **extra_fields):
+        if self.filter(role=Role.SUPERADMIN).exists():
+            raise CommandError(
+                "A SUPERADMIN already exists. Demote them via the admin "
+                "(or delete them) before creating another."
+            )
         extra_fields.setdefault("role", Role.SUPERADMIN)
         return super().create_superuser(username, email, password, **extra_fields)
 
@@ -74,6 +83,16 @@ class User(AbstractUser):
     class Meta:
         verbose_name = _("user")
         verbose_name_plural = _("users")
+        constraints = [
+            # DB-level safety net for the one-superadmin invariant. The
+            # application enforces it in `save()`, but this prevents bad
+            # data from sneaking in via raw SQL or `.update()` calls.
+            models.UniqueConstraint(
+                fields=["role"],
+                condition=models.Q(role="superadmin"),
+                name="single_superadmin",
+            ),
+        ]
 
     def save(self, *args, **kwargs):
         # Role is authoritative — derive Django's is_staff / is_superuser.
@@ -88,4 +107,29 @@ class User(AbstractUser):
         else:  # USER
             self.is_staff = False
             self.is_superuser = False
-        super().save(*args, **kwargs)
+
+        if self.role == Role.SUPERADMIN:
+            # Atomic handover: any other SUPERADMIN drops to ADMIN before
+            # we land. `.update()` keeps it to a single SQL statement and
+            # avoids recursing into save().
+            with transaction.atomic():
+                others = User.objects.filter(role=Role.SUPERADMIN)
+                if self.pk:
+                    others = others.exclude(pk=self.pk)
+                others.update(role=Role.ADMIN, is_staff=True, is_superuser=False)
+                super().save(*args, **kwargs)
+        else:
+            super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        # Refuse to delete the sole SUPERADMIN — by the invariant, the
+        # current SUPERADMIN is always the sole one. Demote first, then
+        # delete (the demoted user becomes a normal ADMIN row that's
+        # safe to remove).
+        if self.role == Role.SUPERADMIN:
+            raise PermissionError(
+                "Cannot delete the SUPERADMIN. Promote another user to "
+                "SUPERADMIN first (which auto-demotes this account), then "
+                "delete it."
+            )
+        return super().delete(*args, **kwargs)

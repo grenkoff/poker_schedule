@@ -8,7 +8,7 @@ from django.contrib.sites.models import Site
 from django.utils.translation import gettext_lazy as _
 
 from .admin_mixins import SuperuserOnlyAdminMixin
-from .models import User
+from .models import Role, User
 
 
 @admin.register(User)
@@ -32,6 +32,14 @@ class UserAdmin(SuperuserOnlyAdminMixin, DjangoUserAdmin):
         "timezone",
     )
     list_filter = (*DjangoUserAdmin.list_filter, "role")
+
+    def has_delete_permission(self, request, obj=None):
+        # The sole SUPERADMIN can never be deleted directly. Promote
+        # someone else first (which auto-demotes this account), then
+        # delete the now-ADMIN row.
+        if obj is not None and obj.role == Role.SUPERADMIN:
+            return False
+        return super().has_delete_permission(request, obj)
 
 
 # Group / Site / EmailAddress / EmailConfirmation are all infra concerns —
