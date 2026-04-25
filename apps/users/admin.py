@@ -1,9 +1,7 @@
 from allauth.account.models import EmailAddress, EmailConfirmation
 from django.contrib import admin, messages
-from django.contrib.auth.admin import GroupAdmin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.auth.models import Group
-from django.contrib.sites.admin import SiteAdmin
 from django.contrib.sites.models import Site
 from django.shortcuts import render
 from django.utils.translation import gettext_lazy as _
@@ -159,22 +157,15 @@ class UserAdmin(SuperuserOnlyAdminMixin, DjangoUserAdmin):
         )
 
 
-# Group / Site / EmailAddress / EmailConfirmation are all infra concerns —
-# only SUPERADMIN should see them. Re-register each with the mixin applied.
-
-for _model, _base_admin in (
-    (Group, GroupAdmin),
-    (Site, SiteAdmin),
-):
+# `Group` and `Site` are unused by this project — we drive access via
+# `User.role` (no Django Groups), and the Site framework is configured via
+# settings/env, never edited in the admin UI. Drop both from the index.
+for _model in (Group, Site):
     if admin.site.is_registered(_model):
         admin.site.unregister(_model)
-    admin.site.register(
-        _model,
-        type(f"Restricted{_base_admin.__name__}", (SuperuserOnlyAdminMixin, _base_admin), {}),
-    )
 
-# allauth's EmailAddress / EmailConfirmation use a plain ModelAdmin; rebuild
-# them with the same restriction. They're registered lazily, so guard each.
+# `EmailAddress` and `EmailConfirmation` (allauth) stay registered for the
+# rare email-recovery case but are restricted to SUPERADMIN-only access.
 for _model in (EmailAddress, EmailConfirmation):
     if admin.site.is_registered(_model):
         _existing = type(admin.site._registry[_model])

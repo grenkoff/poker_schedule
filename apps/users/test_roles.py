@@ -148,7 +148,9 @@ def test_admin_role_cannot_view_group_admin(client: Client):
     )
     client.force_login(admin_user)
     response = client.get("/admin/auth/group/")
-    assert response.status_code in (302, 403)
+    # Group is unregistered from the admin entirely → 404 for everyone,
+    # which is strictly stronger than the original "403 for non-superuser".
+    assert response.status_code in (302, 403, 404)
 
 
 @pytest.mark.django_db

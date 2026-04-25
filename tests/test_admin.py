@@ -19,13 +19,15 @@ from apps.tournaments.models import (
 
 User = get_user_model()
 
+# Top-level changelist URLs that should render for a superuser.
+# `BlindStructure` and `TournamentResult` are managed only as inlines on
+# Tournament; `Group` and `Site` are unused and unregistered — so none of
+# them appear here.
 ADMIN_URLS = [
     "/admin/users/user/",
     "/admin/rooms/network/",
     "/admin/rooms/pokerroom/",
     "/admin/tournaments/tournament/",
-    "/admin/tournaments/blindstructure/",
-    "/admin/tournaments/tournamentresult/",
 ]
 
 
@@ -41,6 +43,21 @@ def test_admin_changelist_renders(admin_client, url):
 def test_admin_add_page_renders(admin_client, url):
     response = admin_client.get(url)
     assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "/admin/tournaments/blindstructure/",
+        "/admin/tournaments/tournamentresult/",
+        "/admin/auth/group/",
+        "/admin/sites/site/",
+    ],
+)
+@pytest.mark.django_db
+def test_unregistered_admin_pages_are_404(admin_client, url):
+    response = admin_client.get(url)
+    assert response.status_code == 404
 
 
 @pytest.fixture

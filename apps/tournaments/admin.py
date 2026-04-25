@@ -131,24 +131,7 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         self.message_user(request, _("%d tournament(s) un-verified.") % updated)
 
 
-@admin.register(BlindStructure)
-class BlindStructureAdmin(StaffAdminMixin, admin.ModelAdmin):
-    list_display = ("tournament", "level", "small_blind", "big_blind", "ante")
-    list_filter = ("tournament__room",)
-    search_fields = ("tournament__name",)
-    autocomplete_fields = ("tournament",)
-
-
-@admin.register(TournamentResult)
-class TournamentResultAdmin(StaffAdminMixin, admin.ModelAdmin):
-    list_display = (
-        "tournament",
-        "instance_started_at",
-        "entrants",
-        "final_table_avg_bb",
-    )
-    list_filter = ("tournament__room",)
-    search_fields = ("tournament__name",)
-    date_hierarchy = "instance_started_at"
-    autocomplete_fields = ("tournament",)
-    readonly_fields = ("created_at",)
+# `BlindStructure` and `TournamentResult` are intentionally NOT registered
+# at the top level — they're managed inline from `TournamentAdmin` (via
+# `BlindStructureInline` / `TournamentResultInline`). Adding standalone
+# admin pages just clutters the index without giving any new capability.
