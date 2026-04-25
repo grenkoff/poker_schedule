@@ -257,6 +257,13 @@
         </nav>
     </header>
     <main>
+        {% if messages %}
+            <div class="messages">
+                {% for msg in messages %}
+                    <div class="flash flash-{{ msg.tags|default:'info' }}">{{ msg|safe }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
         {% block content %}{% endblock %}
     </main>
 </body>
