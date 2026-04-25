@@ -61,6 +61,15 @@ class User(AbstractUser):
         default=Role.USER,
         help_text=_("Drives is_staff and is_superuser via User.save()."),
     )
+    is_break_glass = models.BooleanField(
+        _("break-glass account"),
+        default=False,
+        help_text=_(
+            "Marks this row as an emergency-only SUPERADMIN. The account is "
+            "hidden from the default admin list view; document its credentials "
+            "offline and only sign in to recover from a lost main SUPERADMIN."
+        ),
+    )
     timezone = models.CharField(
         _("timezone"),
         max_length=64,

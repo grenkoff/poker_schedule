@@ -1,0 +1,44 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Confirm SUPERADMIN promotion" %}{% endblock %}
+
+{% block content %}
+<h1>{% trans "Confirm SUPERADMIN promotion" %}</h1>
+
+<div style="max-width:680px;border:1px solid #f0c36d;background:#fcf8e3;padding:1rem;border-radius:4px;margin:1rem 0;">
+    <p>
+        {% blocktrans with name=target.username email=target.email %}
+        You are about to grant the <strong>SUPERADMIN</strong> role to <strong>{{ name }}</strong>
+        ({{ email }}).
+        {% endblocktrans %}
+    </p>
+    <p>
+        {% blocktrans %}This grants full system access including user management, audit log
+        visibility, and the ability to verify tournaments. The action is logged in the
+        role-change audit.{% endblocktrans %}
+    </p>
+</div>
+
+<form method="post" action="">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="promote_to_superadmin_with_confirmation">
+    <input type="hidden" name="_selected_action" value="{{ target.pk }}">
+    <input type="hidden" name="confirm" value="yes">
+    <p>
+        <label for="confirm_username">
+            {% blocktrans with name=target.username %}Type the username <code>{{ name }}</code> to confirm:{% endblocktrans %}
+        </label><br>
+        <input type="text" id="confirm_username" name="confirm_username" autocomplete="off" autofocus style="font-family:monospace;width:280px;padding:0.4rem;">
+    </p>
+    {% if error %}
+        <p style="color:#a94442">{{ error }}</p>
+    {% endif %}
+    <p>
+        <button type="submit" class="default" style="background:#c9302c;color:#fff;padding:0.5rem 1rem;border:none;border-radius:3px;cursor:pointer">
+            {% trans "Promote to SUPERADMIN" %}
+        </button>
+        <a href="../" style="margin-left:1rem">{% trans "Cancel" %}</a>
+    </p>
+</form>
+{% endblock %}
