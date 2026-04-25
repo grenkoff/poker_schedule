@@ -104,8 +104,7 @@ config/
 apps/
   users/        # custom User with timezone + preferred_language
   rooms/        # poker rooms & networks
-  tournaments/  # tournament schedules & structures
-  scrapers/     # per-room scraper adapters
+  tournaments/  # tournament schedules & structures (admin-only entry)
   filters/      # filter presets & shared links
   exports/      # PDF export
   analytics/    # historical averages

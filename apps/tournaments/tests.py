@@ -10,7 +10,6 @@ from apps.rooms.models import PokerRoom
 from apps.tournaments.models import (
     BlindStructure,
     GameType,
-    SourceKind,
     TableSize,
     Tournament,
     TournamentFormat,
@@ -76,7 +75,6 @@ def test_tournament_defaults_are_sensible(pokerok):
     t = _make_tournament(pokerok)
     assert t.final_table_size == 9
     assert t.blind_reset_at_final is False
-    assert t.source_kind == SourceKind.MANUAL
     assert t.verified_by_admin is False
     assert t.avg_entrants is None
 
