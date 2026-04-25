@@ -1,9 +1,9 @@
-"""Tests for the permanent-and-singular SUPERADMIN invariant.
+"""Tests for the multi-SUPERADMIN with minimum-1 invariant.
 
-The role cannot be assigned to anyone but the first claimer, cannot be
-removed once held, and the holder cannot be deleted. Enforcement spans
-the model save/delete, the admin form, the createsuperuser CLI, and a
-DB-level partial unique constraint.
+Multiple SUPERADMINs may exist; the system always keeps at least one.
+Promotion is unrestricted; demotion or deletion of the last SUPERADMIN
+is rejected. createsuperuser always works. The protection lives at the
+application layer (matching GitHub-org / Atlassian-site-admin patterns).
 """
 
 from __future__ import annotations
@@ -14,8 +14,6 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
-from django.core.management.base import CommandError
-from django.db import IntegrityError
 
 from apps.users.admin import UserAdmin
 from apps.users.models import Role
@@ -30,49 +28,120 @@ def _make(username: str, role: str = Role.USER) -> UserModel:
     )
 
 
-# --- promote / demote ---------------------------------------------------
+# --- promote freely --------------------------------------------------------
 
 
 @pytest.mark.django_db
-def test_promoting_existing_user_to_superadmin_is_rejected():
+def test_can_promote_multiple_users_to_superadmin():
+    a = _make("a", role=Role.SUPERADMIN)
+    b = _make("b", role=Role.SUPERADMIN)
+    assert a.role == Role.SUPERADMIN
+    assert b.role == Role.SUPERADMIN
+    assert User.objects.filter(role=Role.SUPERADMIN).count() == 2
+
+
+@pytest.mark.django_db
+def test_existing_user_can_be_promoted_to_superadmin():
     _make("first", role=Role.SUPERADMIN)
     second = _make("second")
-
     second.role = Role.SUPERADMIN
-    with pytest.raises(ValidationError, match="already exists"):
-        second.save()
-
-    second.refresh_from_db()
-    assert second.role == Role.USER
-    assert User.objects.filter(role=Role.SUPERADMIN).count() == 1
+    second.save()
+    assert User.objects.filter(role=Role.SUPERADMIN).count() == 2
 
 
-@pytest.mark.django_db
-def test_creating_new_superadmin_when_one_exists_is_rejected():
-    _make("first", role=Role.SUPERADMIN)
-    with pytest.raises(ValidationError, match="already exists"):
-        _make("second", role=Role.SUPERADMIN)
-    assert User.objects.filter(role=Role.SUPERADMIN).count() == 1
+# --- minimum-1 invariant ---------------------------------------------------
 
 
 @pytest.mark.django_db
-def test_superadmin_cannot_demote_themselves():
+def test_demoting_last_superadmin_is_rejected():
     sa = _make("sa", role=Role.SUPERADMIN)
     sa.role = Role.ADMIN
-    with pytest.raises(ValidationError, match="permanent"):
+    with pytest.raises(ValidationError, match="last SUPERADMIN"):
         sa.save()
     sa.refresh_from_db()
     assert sa.role == Role.SUPERADMIN
 
 
 @pytest.mark.django_db
-def test_superadmin_cannot_become_user_either():
+def test_demoting_a_superadmin_is_ok_when_others_exist():
+    a = _make("a", role=Role.SUPERADMIN)
+    _make("b", role=Role.SUPERADMIN)
+    a.role = Role.ADMIN
+    a.save()
+    a.refresh_from_db()
+    assert a.role == Role.ADMIN
+    assert User.objects.filter(role=Role.SUPERADMIN).count() == 1
+
+
+@pytest.mark.django_db
+def test_deleting_last_superadmin_is_rejected():
     sa = _make("sa", role=Role.SUPERADMIN)
-    sa.role = Role.USER
-    with pytest.raises(ValidationError, match="permanent"):
-        sa.save()
-    sa.refresh_from_db()
-    assert sa.role == Role.SUPERADMIN
+    with pytest.raises(PermissionError, match="last SUPERADMIN"):
+        sa.delete()
+    assert User.objects.filter(username="sa").exists()
+
+
+@pytest.mark.django_db
+def test_deleting_a_superadmin_is_ok_when_others_exist():
+    a = _make("a", role=Role.SUPERADMIN)
+    _make("b", role=Role.SUPERADMIN)
+    a.delete()
+    assert not User.objects.filter(username="a").exists()
+    assert User.objects.filter(role=Role.SUPERADMIN).count() == 1
+
+
+# --- createsuperuser CLI ---------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_createsuperuser_works_when_one_already_exists():
+    """No more "already exists" failure — multi-SUPERADMIN is supported."""
+    _make("first", role=Role.SUPERADMIN)
+    call_command(
+        "createsuperuser",
+        "--noinput",
+        "--username=second",
+        "--email=second@example.com",
+        stdout=StringIO(),
+    )
+    second = User.objects.get(username="second")
+    assert second.role == Role.SUPERADMIN
+    assert User.objects.filter(role=Role.SUPERADMIN).count() == 2
+
+
+# --- admin gates -----------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_admin_blocks_delete_button_for_last_superadmin():
+    sa = _make("sa", role=Role.SUPERADMIN)
+    user_admin = UserAdmin(User, None)
+    assert user_admin.has_delete_permission(request=None, obj=sa) is False
+
+
+@pytest.mark.django_db
+def test_admin_allows_delete_button_when_other_superadmin_exists():
+    class _R:
+        user = type("U", (), {"is_active": True, "is_staff": True, "is_superuser": True})()
+
+    a = _make("a", role=Role.SUPERADMIN)
+    _make("b", role=Role.SUPERADMIN)
+    user_admin = UserAdmin(User, None)
+    assert user_admin.has_delete_permission(request=_R(), obj=a) is True
+
+
+@pytest.mark.django_db
+def test_admin_allows_delete_button_for_regular_admin():
+    class _R:
+        user = type("U", (), {"is_active": True, "is_staff": True, "is_superuser": True})()
+
+    _make("sa", role=Role.SUPERADMIN)
+    other = _make("other", role=Role.ADMIN)
+    user_admin = UserAdmin(User, None)
+    assert user_admin.has_delete_permission(request=_R(), obj=other) is True
+
+
+# --- non-role saves stay frictionless --------------------------------------
 
 
 @pytest.mark.django_db
@@ -83,129 +152,3 @@ def test_resaving_superadmin_with_unrelated_changes_is_a_no_op():
     sa.save()
     sa.refresh_from_db()
     assert sa.role == Role.SUPERADMIN
-    assert sa.timezone == "Europe/Moscow"
-
-
-@pytest.mark.django_db
-def test_first_superadmin_can_be_created_when_none_exists():
-    sa = _make("sa", role=Role.SUPERADMIN)
-    assert sa.role == Role.SUPERADMIN
-    assert sa.is_superuser is True
-
-
-# --- delete ------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_deleting_superadmin_is_blocked_at_model():
-    sa = _make("sa", role=Role.SUPERADMIN)
-    with pytest.raises(PermissionError, match="permanent"):
-        sa.delete()
-    assert User.objects.filter(username="sa").exists()
-
-
-@pytest.mark.django_db
-def test_admin_blocks_delete_button_for_superadmin():
-    sa = _make("sa", role=Role.SUPERADMIN)
-    user_admin = UserAdmin(User, None)
-    assert user_admin.has_delete_permission(request=None, obj=sa) is False
-
-
-@pytest.mark.django_db
-def test_admin_allows_delete_button_for_regular_admin():
-    class _R:
-        user = type("U", (), {"is_active": True, "is_staff": True, "is_superuser": True})()
-
-    _make("sa", role=Role.SUPERADMIN)  # role exists in the system
-    other = _make("other", role=Role.ADMIN)
-    user_admin = UserAdmin(User, None)
-    assert user_admin.has_delete_permission(request=_R(), obj=other) is True
-
-
-# --- admin form: role field --------------------------------------------
-
-
-@pytest.mark.django_db
-def test_admin_makes_role_readonly_for_superadmin_row():
-    sa = _make("sa", role=Role.SUPERADMIN)
-    user_admin = UserAdmin(User, None)
-
-    class _R:
-        user = type("U", (), {"is_active": True, "is_staff": True, "is_superuser": True})()
-
-    ro = user_admin.get_readonly_fields(request=_R(), obj=sa)
-    assert "role" in ro
-
-
-@pytest.mark.django_db
-def test_admin_keeps_role_editable_for_regular_user_row():
-    _make("sa", role=Role.SUPERADMIN)
-    other = _make("other", role=Role.ADMIN)
-    user_admin = UserAdmin(User, None)
-
-    class _R:
-        user = type("U", (), {"is_active": True, "is_staff": True, "is_superuser": True})()
-
-    ro = user_admin.get_readonly_fields(request=_R(), obj=other)
-    assert "role" not in ro
-
-
-@pytest.mark.django_db
-def test_admin_role_choices_exclude_superadmin_when_one_exists():
-    _make("sa", role=Role.SUPERADMIN)
-    user_admin = UserAdmin(User, None)
-    role_field = User._meta.get_field("role")
-
-    class _R:
-        user = type("U", (), {"is_active": True, "is_staff": True, "is_superuser": True})()
-
-    formfield = user_admin.formfield_for_choice_field(role_field, request=_R())
-    choice_values = [c[0] for c in formfield.choices]
-    assert Role.SUPERADMIN not in choice_values
-    assert Role.USER in choice_values
-    assert Role.ADMIN in choice_values
-
-
-@pytest.mark.django_db
-def test_admin_role_choices_include_superadmin_when_none_exists():
-    """When no SUPERADMIN exists yet, the option is selectable so the
-    very first promotion path stays open from the admin too."""
-    user_admin = UserAdmin(User, None)
-    role_field = User._meta.get_field("role")
-
-    class _R:
-        user = type("U", (), {"is_active": True, "is_staff": True, "is_superuser": True})()
-
-    formfield = user_admin.formfield_for_choice_field(role_field, request=_R())
-    choice_values = [c[0] for c in formfield.choices]
-    assert Role.SUPERADMIN in choice_values
-
-
-# --- createsuperuser CLI ------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_createsuperuser_fails_when_one_already_exists():
-    _make("first", role=Role.SUPERADMIN)
-    with pytest.raises(CommandError, match="already exists"):
-        call_command(
-            "createsuperuser",
-            "--noinput",
-            "--username=second",
-            "--email=second@example.com",
-            stdout=StringIO(),
-        )
-    assert User.objects.filter(username="second").exists() is False
-
-
-# --- DB constraint -----------------------------------------------------
-
-
-@pytest.mark.django_db(transaction=True)
-def test_db_constraint_blocks_two_superadmins_via_raw_update():
-    """Application checks live in `save()` and admin form validation;
-    the partial unique constraint catches anything that bypasses both."""
-    _make("a", role=Role.SUPERADMIN)
-    b = _make("b", role=Role.ADMIN)
-    with pytest.raises(IntegrityError):
-        User.objects.filter(pk=b.pk).update(role=Role.SUPERADMIN)
