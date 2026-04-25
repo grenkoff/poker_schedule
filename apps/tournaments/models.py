@@ -35,17 +35,13 @@ class TableSize(models.TextChoices):
     OTHER = "other", _("Other")
 
 
-class SourceKind(models.TextChoices):
-    SCRAPED = "scraped", _("Scraped")
-    MANUAL = "manual", _("Manual")
-
-
 class Tournament(models.Model):
     """A scheduled online poker tournament.
 
-    One row represents a recurring tournament template (e.g. "Daily Bounty
-    Hunter $10"). Individual runs live in `TournamentResult`. The
-    `(room, external_id)` pair is the upsert key used by scrapers.
+    Tournaments are entered manually through the admin. `(room,
+    external_id)` is unique so the same template-id from a poker room
+    can't be added twice; admins typically use the room's own tournament
+    ID for `external_id` to keep parity with the source.
     """
 
     # --- identification -------------------------------------------------
@@ -156,18 +152,6 @@ class Tournament(models.Model):
     )
 
     # --- meta -----------------------------------------------------------
-    source_kind = models.CharField(
-        _("source"),
-        max_length=16,
-        choices=SourceKind.choices,
-        default=SourceKind.MANUAL,
-    )
-    scraped_at = models.DateTimeField(_("scraped at"), null=True, blank=True)
-    raw_payload = models.JSONField(
-        _("raw scraper payload"),
-        null=True,
-        blank=True,
-    )
     verified_by_admin = models.BooleanField(_("verified by admin"), default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -246,7 +230,7 @@ class TournamentResult(models.Model):
 
     Feeds the historical-metrics pipeline: scrolling averages of entrants
     and final-table BB counts are computed from rows here. `(tournament,
-    instance_started_at)` keeps inserts idempotent for scraped data.
+    instance_started_at)` keeps inserts idempotent.
     """
 
     tournament = models.ForeignKey(

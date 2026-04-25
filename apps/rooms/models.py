@@ -31,7 +31,7 @@ class PokerRoom(models.Model):
         _("slug"),
         max_length=64,
         unique=True,
-        help_text=_("Stable identifier used as the scraper_key and in external IDs."),
+        help_text=_("Stable identifier used in URLs and external references."),
     )
     network = models.ForeignKey(
         Network,
@@ -43,7 +43,7 @@ class PokerRoom(models.Model):
     is_active = models.BooleanField(
         _("active"),
         default=True,
-        help_text=_("When false, scrapers skip this room and filters hide it."),
+        help_text=_("When false, the room is hidden from filters and the public list."),
     )
 
     class Meta:

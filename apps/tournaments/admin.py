@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils.translation import gettext_lazy as _
 
-from .models import BlindStructure, SourceKind, Tournament, TournamentResult
+from .models import BlindStructure, Tournament, TournamentResult
 
 
 class BlindStructureInline(admin.TabularInline):
@@ -32,7 +32,6 @@ class TournamentAdmin(admin.ModelAdmin):
         "buy_in_cents",
         "currency",
         "start_at",
-        "source_kind",
         "verified_by_admin",
     )
     list_filter = (
@@ -40,7 +39,6 @@ class TournamentAdmin(admin.ModelAdmin):
         "game_type",
         "tournament_format",
         "table_size",
-        "source_kind",
         "verified_by_admin",
         "blind_reset_at_final",
     )
@@ -49,6 +47,7 @@ class TournamentAdmin(admin.ModelAdmin):
     autocomplete_fields = ("room",)
     inlines = (BlindStructureInline, TournamentResultInline)
     actions = ("mark_verified", "unmark_verified")
+    readonly_fields = ("avg_entrants", "avg_blinds_at_ft")
 
     fieldsets = (
         (None, {"fields": ("room", "external_id", "name")}),
@@ -92,24 +91,8 @@ class TournamentAdmin(admin.ModelAdmin):
                 "fields": ("avg_entrants", "avg_blinds_at_ft"),
             },
         ),
-        (
-            _("Meta"),
-            {
-                "fields": (
-                    "source_kind",
-                    "scraped_at",
-                    "verified_by_admin",
-                    "raw_payload",
-                ),
-            },
-        ),
+        (_("Meta"), {"fields": ("verified_by_admin",)}),
     )
-
-    def get_readonly_fields(self, request, obj=None):
-        base = ("avg_entrants", "avg_blinds_at_ft")
-        if obj and obj.source_kind == SourceKind.SCRAPED:
-            return (*base, "external_id", "scraped_at", "raw_payload")
-        return base
 
     @admin.action(description=_("Mark selected tournaments as verified"))
     def mark_verified(self, request, queryset):

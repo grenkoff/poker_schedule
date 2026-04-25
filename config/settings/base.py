@@ -37,7 +37,6 @@ LOCAL_APPS = [
     "apps.users",
     "apps.rooms",
     "apps.tournaments",
-    "apps.scrapers",
     "apps.filters",
     "apps.exports",
     "apps.analytics",

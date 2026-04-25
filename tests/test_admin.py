@@ -104,20 +104,3 @@ def test_unmark_verified_action(admin_client, tournament_with_children):
     )
     tournament_with_children.refresh_from_db()
     assert tournament_with_children.verified_by_admin is False
-
-
-@pytest.mark.django_db
-def test_scraped_tournament_readonly_fields_in_admin(admin_client, tournament_with_children):
-    """Scraped tournaments should lock external_id / scraped_at / raw_payload
-    to prevent admins from silently corrupting the scraper's upsert key."""
-    from apps.tournaments.admin import TournamentAdmin
-    from apps.tournaments.models import SourceKind
-
-    tournament_with_children.source_kind = SourceKind.SCRAPED
-    tournament_with_children.save(update_fields=["source_kind"])
-
-    admin_instance = TournamentAdmin(Tournament, None)
-    readonly = admin_instance.get_readonly_fields(request=None, obj=tournament_with_children)
-    assert "external_id" in readonly
-    assert "scraped_at" in readonly
-    assert "raw_payload" in readonly
