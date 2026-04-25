@@ -139,3 +139,58 @@ class User(AbstractUser):
                     "Cannot delete the last SUPERADMIN. Promote another user to SUPERADMIN first."
                 )
         return super().delete(*args, **kwargs)
+
+
+class AuditSource(models.TextChoices):
+    ADMIN = "admin", _("Django admin")
+    CLI = "cli", _("Management command")
+    SIGNUP = "signup", _("Signup flow")
+    OTHER = "other", _("Other")
+
+
+class RoleChangeAudit(models.Model):
+    """Append-only log of every change to `User.role`.
+
+    Created from a `post_save` signal on `User`; the request context (who,
+    from which IP) is supplied by `apps.users.audit_context.AuditContextMiddleware`.
+    Records are kept indefinitely — there's no auto-cleanup yet.
+    """
+
+    user = models.ForeignKey(
+        "users.User",
+        on_delete=models.CASCADE,
+        related_name="role_audits",
+        verbose_name=_("user"),
+    )
+    old_role = models.CharField(_("old role"), max_length=16, blank=True)
+    new_role = models.CharField(_("new role"), max_length=16)
+    changed_by = models.ForeignKey(
+        "users.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="role_changes_made",
+        verbose_name=_("changed by"),
+    )
+    source = models.CharField(
+        _("source"),
+        max_length=16,
+        choices=AuditSource.choices,
+        default=AuditSource.OTHER,
+    )
+    ip_address = models.GenericIPAddressField(_("IP address"), null=True, blank=True)
+    user_agent = models.CharField(_("user agent"), max_length=512, blank=True)
+    changed_at = models.DateTimeField(_("changed at"), auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("role change")
+        verbose_name_plural = _("role changes")
+        ordering = ("-changed_at",)
+        indexes = [
+            models.Index(fields=["-changed_at"]),
+            models.Index(fields=["user", "-changed_at"]),
+        ]
+
+    def __str__(self) -> str:
+        old = self.old_role or "(new)"
+        return f"{self.user.username}: {old} -> {self.new_role} @ {self.changed_at:%Y-%m-%d %H:%M}"

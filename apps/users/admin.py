@@ -8,7 +8,45 @@ from django.contrib.sites.models import Site
 from django.utils.translation import gettext_lazy as _
 
 from .admin_mixins import SuperuserOnlyAdminMixin
-from .models import Role, User
+from .models import Role, RoleChangeAudit, User
+
+
+@admin.register(RoleChangeAudit)
+class RoleChangeAuditAdmin(SuperuserOnlyAdminMixin, admin.ModelAdmin):
+    """Append-only viewer for the role-change audit log."""
+
+    list_display = (
+        "changed_at",
+        "user",
+        "old_role",
+        "new_role",
+        "changed_by",
+        "source",
+        "ip_address",
+    )
+    list_filter = ("source", "new_role", "old_role")
+    search_fields = ("user__username", "user__email", "changed_by__username", "ip_address")
+    date_hierarchy = "changed_at"
+    readonly_fields = (
+        "user",
+        "old_role",
+        "new_role",
+        "changed_by",
+        "source",
+        "ip_address",
+        "user_agent",
+        "changed_at",
+    )
+
+    def has_add_permission(self, request):
+        # Audit rows are written by signals only — never by hand.
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(User)
