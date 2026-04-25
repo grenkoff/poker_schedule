@@ -152,7 +152,11 @@ class Tournament(models.Model):
     )
 
     # --- meta -----------------------------------------------------------
-    verified_by_admin = models.BooleanField(_("verified by admin"), default=False)
+    # `submitted_for_review` is set by an ADMIN; `verified_by_admin` is set
+    # by a SUPERADMIN. The two booleans together encode the workflow state
+    # (draft → pending → verified) without a dedicated enum.
+    submitted_for_review = models.BooleanField(_("submitted for review"), default=False)
+    verified_by_admin = models.BooleanField(_("verified by superadmin"), default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
