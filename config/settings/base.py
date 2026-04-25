@@ -29,6 +29,7 @@ THIRD_PARTY_APPS: list[str] = [
     "django_filters",
     "allauth",
     "allauth.account",
+    "allauth.mfa",
 ]
 
 SITE_ID = 1
@@ -54,6 +55,7 @@ MIDDLEWARE = [
     "apps.users.middleware.UserTimezoneMiddleware",
     "apps.users.audit_context.AuditContextMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    "apps.users.mfa_check.SuperadminMFAReminderMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
 ]
@@ -110,6 +112,12 @@ ACCOUNT_DEFAULT_HTTP_PROTOCOL = env("ACCOUNT_DEFAULT_HTTP_PROTOCOL", default="ht
 LOGIN_URL = "account_login"
 LOGIN_REDIRECT_URL = "/"
 ACCOUNT_LOGOUT_REDIRECT_URL = "/"
+
+# --- MFA (allauth.mfa) ---------------------------------------------------
+# TOTP only for now (phone-app authenticators). WebAuthn / passkeys could
+# be added later by setting MFA_SUPPORTED_TYPES = ["totp", "webauthn"].
+MFA_SUPPORTED_TYPES = ["totp", "recovery_codes"]
+MFA_TOTP_ISSUER = env("MFA_TOTP_ISSUER", default="Poker Schedule")
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
