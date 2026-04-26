@@ -12,9 +12,11 @@ from apps.tournaments.models import (
     BubbleOption,
     EarlyBirdType,
     GameType,
+    Periodicity,
     ReEntryOption,
     Tournament,
 )
+from apps.tournaments.recurrence import regenerate_series
 
 
 @pytest.fixture
@@ -48,6 +50,7 @@ def _make_tournament(room: PokerRoom, **overrides) -> Tournament:
         "early_bird": False,
         "early_bird_type": EarlyBirdType.objects.get(name="compensated_at_bubble"),
         "featured_final_table": False,
+        "periodicity": Periodicity.objects.get(name="one_off"),
     }
     defaults.update(overrides)
     return Tournament.objects.create(**defaults)
@@ -114,3 +117,58 @@ def test_option_models_seeded():
     assert ReEntryOption.objects.filter(name="unlimited").exists()
     assert BubbleOption.objects.filter(name="finalized_when_registration_closes").exists()
     assert EarlyBirdType.objects.filter(name="compensated_at_bubble").exists()
+
+
+@pytest.mark.django_db
+def test_periodicity_seeded():
+    assert Periodicity.objects.get(name="one_off").interval_seconds == 0
+    assert Periodicity.objects.get(name="every_4_hours").interval_seconds == 4 * 3600
+    assert Periodicity.objects.get(name="every_24_hours").interval_seconds == 24 * 3600
+    assert Periodicity.objects.get(name="weekly").interval_seconds == 7 * 24 * 3600
+
+
+@pytest.mark.django_db
+def test_regenerate_series_one_off_creates_no_children(pokerok):
+    master = _make_tournament(pokerok)
+    regenerate_series(master)
+    assert Tournament.objects.filter(series_master=master).count() == 0
+
+
+@pytest.mark.django_db
+def test_regenerate_series_every_24_hours_within_30_day_horizon(pokerok):
+    daily = Periodicity.objects.get(name="every_24_hours")
+    master = _make_tournament(pokerok, periodicity=daily)
+    BlindStructure.objects.create(tournament=master, level=1, small_blind=10, big_blind=20)
+    regenerate_series(master)
+    children = Tournament.objects.filter(series_master=master).order_by("starting_time")
+    assert children.count() == 30
+    assert children.first().starting_time == master.starting_time + timedelta(days=1)
+    assert children.last().starting_time == master.starting_time + timedelta(days=30)
+    # Blind levels are duplicated to every child.
+    for child in children:
+        assert child.blind_levels.count() == 1
+    # late_reg offset is preserved.
+    offset = master.late_reg_at - master.starting_time
+    for child in children:
+        assert child.late_reg_at - child.starting_time == offset
+
+
+@pytest.mark.django_db
+def test_regenerate_series_is_idempotent(pokerok):
+    weekly = Periodicity.objects.get(name="weekly")
+    master = _make_tournament(pokerok, periodicity=weekly)
+    regenerate_series(master)
+    first_count = Tournament.objects.filter(series_master=master).count()
+    regenerate_series(master)
+    assert Tournament.objects.filter(series_master=master).count() == first_count
+
+
+@pytest.mark.django_db
+def test_regenerate_series_skipped_for_child(pokerok):
+    daily = Periodicity.objects.get(name="every_24_hours")
+    master = _make_tournament(pokerok, periodicity=daily)
+    regenerate_series(master)
+    child = Tournament.objects.filter(series_master=master).first()
+    # Calling on a child must be a no-op (no grandchildren).
+    regenerate_series(child)
+    assert Tournament.objects.filter(series_master=child).count() == 0

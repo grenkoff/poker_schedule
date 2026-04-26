@@ -8,9 +8,11 @@ from .models import (
     BlindStructure,
     BubbleOption,
     EarlyBirdType,
+    Periodicity,
     ReEntryOption,
     Tournament,
 )
+from .recurrence import regenerate_series
 
 
 class BlindStructureInline(admin.TabularInline):
@@ -29,6 +31,7 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         "game_type",
         "buy_in_total_cents",
         "starting_time",
+        "periodicity",
         "submitted_for_review",
         "verified_by_admin",
     )
@@ -37,6 +40,7 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         "game_type",
         "re_entry",
         "bubble",
+        "periodicity",
         "early_bird",
         "featured_final_table",
         "submitted_for_review",
@@ -83,6 +87,10 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
             {"fields": ("min_players", "max_players", "re_entry", "bubble")},
         ),
         (
+            _("Recurrence"),
+            {"fields": ("periodicity", "series_master")},
+        ),
+        (
             _("Features"),
             {"fields": ("early_bird", "early_bird_type", "featured_final_table")},
         ),
@@ -93,9 +101,16 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     )
 
     def get_readonly_fields(self, request, obj=None):
+        readonly = ["series_master"]
         if not request.user.is_superuser:
-            return ("verified_by_admin",)
-        return ()
+            readonly.append("verified_by_admin")
+        return tuple(readonly)
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        instance = form.instance
+        if instance.series_master_id is None:
+            regenerate_series(instance)
 
     def get_actions(self, request):
         actions = super().get_actions(request)
@@ -143,3 +158,9 @@ class BubbleOptionAdmin(_OptionAdmin):
 @admin.register(EarlyBirdType)
 class EarlyBirdTypeAdmin(_OptionAdmin):
     pass
+
+
+@admin.register(Periodicity)
+class PeriodicityAdmin(_OptionAdmin):
+    list_display = ("label", "name", "interval_seconds", "sort_order")
+    fields = ("label", "name", "interval_seconds", "sort_order")

@@ -13,6 +13,7 @@ from apps.tournaments.models import (
     BubbleOption,
     EarlyBirdType,
     GameType,
+    Periodicity,
     ReEntryOption,
     Tournament,
 )
@@ -29,6 +30,7 @@ ADMIN_URLS = [
     "/admin/tournaments/reentryoption/",
     "/admin/tournaments/bubbleoption/",
     "/admin/tournaments/earlybirdtype/",
+    "/admin/tournaments/periodicity/",
 ]
 
 
@@ -88,6 +90,7 @@ def tournament_with_children() -> Tournament:
         early_bird=False,
         early_bird_type=EarlyBirdType.objects.get(name="compensated_at_bubble"),
         featured_final_table=False,
+        periodicity=Periodicity.objects.get(name="one_off"),
     )
     BlindStructure.objects.create(tournament=tournament, level=1, small_blind=25, big_blind=50)
     return tournament

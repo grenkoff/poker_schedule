@@ -18,6 +18,7 @@ from apps.tournaments.models import (
     BubbleOption,
     EarlyBirdType,
     GameType,
+    Periodicity,
     ReEntryOption,
     Tournament,
 )
@@ -73,6 +74,7 @@ def _make(
         early_bird_type=EarlyBirdType.objects.get(name="compensated_at_bubble"),
         featured_final_table=featured_final_table,
         verified_by_admin=verified_by_admin,
+        periodicity=Periodicity.objects.get(name="one_off"),
     )
 
 
