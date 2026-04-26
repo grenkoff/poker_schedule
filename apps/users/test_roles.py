@@ -15,6 +15,7 @@ from apps.tournaments.models import (
     BubbleOption,
     EarlyBirdType,
     GameType,
+    Periodicity,
     ReEntryOption,
     Tournament,
 )
@@ -60,6 +61,7 @@ def _make_tournament(room: PokerRoom, **extras) -> Tournament:
         "early_bird": False,
         "early_bird_type": EarlyBirdType.objects.get(name="compensated_at_bubble"),
         "featured_final_table": False,
+        "periodicity": Periodicity.objects.get(name="one_off"),
     }
     defaults.update(extras)
     return Tournament.objects.create(**defaults)

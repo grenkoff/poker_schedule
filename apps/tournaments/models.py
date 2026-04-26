@@ -55,6 +55,26 @@ class EarlyBirdType(_OptionBase):
         verbose_name_plural = _("early bird types")
 
 
+class Periodicity(_OptionBase):
+    """How often a tournament recurs.
+
+    `interval_seconds=0` means a one-off event. Any positive value means
+    the saved Tournament is treated as a series master, and future
+    occurrences are materialized as child Tournament rows with their
+    `series_master` FK pointing back here.
+    """
+
+    interval_seconds = models.PositiveIntegerField(
+        _("interval (seconds)"),
+        default=0,
+        help_text=_("Set to 0 for one-off tournaments. Otherwise, seconds between occurrences."),
+    )
+
+    class Meta(_OptionBase.Meta):
+        verbose_name = _("periodicity")
+        verbose_name_plural = _("periodicities")
+
+
 class Tournament(models.Model):
     """Manually-entered poker tournament.
 
@@ -123,6 +143,23 @@ class Tournament(models.Model):
         on_delete=models.PROTECT,
         related_name="tournaments",
         verbose_name=_("bubble"),
+    )
+
+    # --- recurrence -----------------------------------------------------
+    periodicity = models.ForeignKey(
+        Periodicity,
+        on_delete=models.PROTECT,
+        related_name="tournaments",
+        verbose_name=_("periodicity"),
+    )
+    series_master = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        related_name="series_children",
+        null=True,
+        blank=True,
+        verbose_name=_("series master"),
+        help_text=_("Filled in for auto-generated occurrences of a recurring tournament."),
     )
 
     # --- features -------------------------------------------------------

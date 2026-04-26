@@ -75,6 +75,7 @@ class TournamentAdminForm(forms.ModelForm):
             "max_players",
             "re_entry",
             "bubble",
+            "periodicity",
             "early_bird",
             "early_bird_type",
             "featured_final_table",
