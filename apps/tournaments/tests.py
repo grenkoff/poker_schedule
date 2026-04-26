@@ -1,6 +1,6 @@
-"""Tests for tournament models: constraints, helpers, relations."""
+"""Tests for tournament models: helpers, relations, blind levels."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -9,34 +9,45 @@ from django.db import IntegrityError
 from apps.rooms.models import PokerRoom
 from apps.tournaments.models import (
     BlindStructure,
+    BubbleOption,
+    EarlyBirdType,
     GameType,
-    TableSize,
+    ReEntryOption,
     Tournament,
-    TournamentFormat,
-    TournamentResult,
 )
 
 
 @pytest.fixture
 def pokerok() -> PokerRoom:
-    """The MVP-seeded Pokerok room (from the rooms data migration)."""
     return PokerRoom.objects.get(slug="pokerok")
 
 
 def _make_tournament(room: PokerRoom, **overrides) -> Tournament:
     defaults = {
         "room": room,
-        "external_id": "ext-1",
-        "name": "Daily $10 Bounty",
+        "name": "Test Tournament",
         "game_type": GameType.NLHE,
-        "tournament_format": TournamentFormat.PKO,
-        "table_size": TableSize.NINE_MAX,
-        "buy_in_cents": 1000,
+        "buy_in_total_cents": 1100,
+        "buy_in_without_rake_cents": 1000,
         "rake_cents": 100,
-        "currency": "USD",
-        "start_at": datetime(2026, 5, 1, 19, 0, tzinfo=UTC),
-        "late_reg_minutes": 60,
-        "blind_level_minutes": 10,
+        "guaranteed_dollars": 10000,
+        "payout_percent": 15,
+        "starting_stack": 10000,
+        "starting_stack_bb": 50,
+        "starting_time": datetime(2026, 5, 1, 19, 0, tzinfo=UTC),
+        "late_reg_at": datetime(2026, 5, 1, 20, 0, tzinfo=UTC),
+        "late_reg_level": 12,
+        "blind_interval_minutes": 10,
+        "break_minutes": 5,
+        "players_per_table": 9,
+        "players_at_final_table": 9,
+        "min_players": 2,
+        "max_players": 1000,
+        "re_entry": ReEntryOption.objects.get(name="unlimited"),
+        "bubble": BubbleOption.objects.get(name="finalized_when_registration_closes"),
+        "early_bird": False,
+        "early_bird_type": EarlyBirdType.objects.get(name="compensated_at_bubble"),
+        "featured_final_table": False,
     }
     defaults.update(overrides)
     return Tournament.objects.create(**defaults)
@@ -44,43 +55,32 @@ def _make_tournament(room: PokerRoom, **overrides) -> Tournament:
 
 @pytest.mark.django_db
 def test_tournament_str_includes_room_and_name(pokerok):
-    tournament = _make_tournament(pokerok)
-    assert str(tournament) == "Pokerok — Daily $10 Bounty"
+    tournament = _make_tournament(pokerok, name="Daily $11 Bounty")
+    assert str(tournament) == "Pokerok — Daily $11 Bounty"
 
 
 @pytest.mark.django_db
-def test_tournament_buy_in_and_total_cost_properties(pokerok):
-    tournament = _make_tournament(pokerok, buy_in_cents=1000, rake_cents=100)
-    assert tournament.buy_in == Decimal("10.00")
-    assert tournament.total_cost == Decimal("11.00")
+def test_tournament_money_decimal_properties(pokerok):
+    tournament = _make_tournament(
+        pokerok,
+        buy_in_total_cents=1100,
+        buy_in_without_rake_cents=1000,
+        rake_cents=100,
+    )
+    assert tournament.buy_in_total == Decimal("11.00")
+    assert tournament.buy_in_without_rake == Decimal("10.00")
+    assert tournament.rake == Decimal("1.00")
 
 
 @pytest.mark.django_db
-def test_tournament_room_external_id_is_unique(pokerok):
-    _make_tournament(pokerok, external_id="dup")
-    with pytest.raises(IntegrityError):
-        _make_tournament(pokerok, external_id="dup", name="Another")
-
-
-@pytest.mark.django_db
-def test_tournament_same_external_id_allowed_across_rooms(pokerok):
-    pokerdom = PokerRoom.objects.get(slug="pokerdom")
-    _make_tournament(pokerok, external_id="shared")
-    _make_tournament(pokerdom, external_id="shared")
-    assert Tournament.objects.filter(external_id="shared").count() == 2
-
-
-@pytest.mark.django_db
-def test_tournament_defaults_are_sensible(pokerok):
+def test_tournament_workflow_defaults(pokerok):
     t = _make_tournament(pokerok)
-    assert t.final_table_size == 9
-    assert t.blind_reset_at_final is False
+    assert t.submitted_for_review is False
     assert t.verified_by_admin is False
-    assert t.avg_entrants is None
 
 
 @pytest.mark.django_db
-def test_blind_structure_level_is_unique_per_tournament(pokerok):
+def test_blind_level_unique_per_tournament(pokerok):
     tournament = _make_tournament(pokerok)
     BlindStructure.objects.create(tournament=tournament, level=1, small_blind=10, big_blind=20)
     with pytest.raises(IntegrityError):
@@ -88,36 +88,29 @@ def test_blind_structure_level_is_unique_per_tournament(pokerok):
 
 
 @pytest.mark.django_db
-def test_blind_structure_levels_are_shared_only_within_a_tournament(pokerok):
-    t1 = _make_tournament(pokerok, external_id="a")
-    t2 = _make_tournament(pokerok, external_id="b")
+def test_blind_levels_independent_across_tournaments(pokerok):
+    t1 = _make_tournament(pokerok, name="A")
+    t2 = _make_tournament(
+        pokerok,
+        name="B",
+        starting_time=datetime(2026, 5, 1, 19, 0, tzinfo=UTC) + timedelta(hours=1),
+    )
     BlindStructure.objects.create(tournament=t1, level=1, small_blind=10, big_blind=20)
     BlindStructure.objects.create(tournament=t2, level=1, small_blind=10, big_blind=20)
     assert BlindStructure.objects.count() == 2
 
 
 @pytest.mark.django_db
-def test_tournament_result_instance_timestamp_is_unique(pokerok):
+def test_deleting_tournament_cascades_to_blind_levels(pokerok):
     tournament = _make_tournament(pokerok)
-    started = datetime(2026, 5, 1, 19, 0, tzinfo=UTC)
-    TournamentResult.objects.create(
-        tournament=tournament, instance_started_at=started, entrants=120
-    )
-    with pytest.raises(IntegrityError):
-        TournamentResult.objects.create(
-            tournament=tournament, instance_started_at=started, entrants=150
-        )
+    BlindStructure.objects.create(tournament=tournament, level=1, small_blind=10, big_blind=20)
+    tournament.delete()
+    assert BlindStructure.objects.count() == 0
 
 
 @pytest.mark.django_db
-def test_deleting_tournament_cascades_to_children(pokerok):
-    tournament = _make_tournament(pokerok)
-    BlindStructure.objects.create(tournament=tournament, level=1, small_blind=10, big_blind=20)
-    TournamentResult.objects.create(
-        tournament=tournament,
-        instance_started_at=datetime(2026, 5, 1, 19, 0, tzinfo=UTC),
-        entrants=100,
-    )
-    tournament.delete()
-    assert BlindStructure.objects.count() == 0
-    assert TournamentResult.objects.count() == 0
+def test_option_models_seeded():
+    """The 0002_seed_options migration plants the defaults."""
+    assert ReEntryOption.objects.filter(name="unlimited").exists()
+    assert BubbleOption.objects.filter(name="finalized_when_registration_closes").exists()
+    assert EarlyBirdType.objects.filter(name="compensated_at_bubble").exists()

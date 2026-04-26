@@ -65,7 +65,7 @@ def shared_view(request: HttpRequest, slug: str) -> HttpResponse:
         if value := request.GET.get(key):
             merged[key] = value
 
-    qs = Tournament.objects.filter(start_at__gte=timezone.now()).select_related(
+    qs = Tournament.objects.filter(starting_time__gte=timezone.now()).select_related(
         "room", "room__network"
     )
     filterset = TournamentFilter(merged, queryset=qs)

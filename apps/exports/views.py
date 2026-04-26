@@ -15,7 +15,7 @@ from apps.tournaments.models import Tournament
 
 
 def _render_pdf(request: HttpRequest) -> tuple[bytes, str]:
-    qs = Tournament.objects.filter(start_at__gte=timezone.now()).select_related(
+    qs = Tournament.objects.filter(starting_time__gte=timezone.now()).select_related(
         "room", "room__network"
     )
     filterset = TournamentFilter(request.GET or None, queryset=qs)

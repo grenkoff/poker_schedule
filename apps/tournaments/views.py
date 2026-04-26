@@ -26,7 +26,7 @@ def tournament_list(request: HttpRequest) -> HttpResponse:
     table partial so the filter form above it is preserved — full-page
     loads stay as the SEO-friendly canonical response.
     """
-    qs = Tournament.objects.filter(start_at__gte=timezone.now()).select_related(
+    qs = Tournament.objects.filter(starting_time__gte=timezone.now()).select_related(
         "room", "room__network"
     )
     filterset = TournamentFilter(request.GET or None, queryset=qs)
