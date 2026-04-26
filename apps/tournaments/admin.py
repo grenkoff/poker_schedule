@@ -162,5 +162,5 @@ class EarlyBirdTypeAdmin(_OptionAdmin):
 
 @admin.register(Periodicity)
 class PeriodicityAdmin(_OptionAdmin):
-    list_display = ("label", "name", "interval_seconds", "sort_order")
+    list_display = ("label", "name", "interval_seconds", "sort_order")  # type: ignore[assignment]
     fields = ("label", "name", "interval_seconds", "sort_order")
