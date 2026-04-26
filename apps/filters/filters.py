@@ -1,12 +1,8 @@
 """Tournament FilterSet for the public list view.
 
-The filter form exposes the subset of Tournament fields users actually
-slice by — room, game, format, table size, buy-in range, start window,
-late-reg minimum, blind reset. Historical-metric filters (avg entrants,
-avg BB at FT) will slot in once those fields are populated in Phase 7.
-
-The buy-in filter takes *major units* (e.g. dollars) for ergonomics; it
-converts to cents on its way to the DB.
+Surfaces the slice users actually narrow by — room, game, buy-in range,
+starting time window, re-entry / bubble policy, featured FT, and the
+admin-verified flag. Buy-in input is in major units (dollars).
 """
 
 from __future__ import annotations
@@ -20,7 +16,13 @@ from django.db.models import QuerySet
 from django.utils.translation import gettext_lazy as _
 
 from apps.rooms.models import PokerRoom
-from apps.tournaments.models import GameType, TableSize, Tournament, TournamentFormat
+from apps.tournaments.models import (
+    BubbleOption,
+    EarlyBirdType,
+    GameType,
+    ReEntryOption,
+    Tournament,
+)
 
 
 class TournamentFilter(django_filters.FilterSet):
@@ -35,15 +37,20 @@ class TournamentFilter(django_filters.FilterSet):
         widget=forms.CheckboxSelectMultiple,
         label=_("Game"),
     )
-    tournament_format = django_filters.MultipleChoiceFilter(
-        choices=TournamentFormat.choices,
+    re_entry = django_filters.ModelMultipleChoiceFilter(
+        queryset=ReEntryOption.objects.all(),
         widget=forms.CheckboxSelectMultiple,
-        label=_("Format"),
+        label=_("Re-entry"),
     )
-    table_size = django_filters.MultipleChoiceFilter(
-        choices=TableSize.choices,
+    bubble = django_filters.ModelMultipleChoiceFilter(
+        queryset=BubbleOption.objects.all(),
         widget=forms.CheckboxSelectMultiple,
-        label=_("Table size"),
+        label=_("Bubble"),
+    )
+    early_bird_type = django_filters.ModelMultipleChoiceFilter(
+        queryset=EarlyBirdType.objects.all(),
+        widget=forms.CheckboxSelectMultiple,
+        label=_("Early bird type"),
     )
 
     buy_in_min = django_filters.NumberFilter(
@@ -55,40 +62,29 @@ class TournamentFilter(django_filters.FilterSet):
         label=_("Max buy-in"),
     )
 
-    start_from = django_filters.DateTimeFilter(
-        field_name="start_at",
+    starting_from = django_filters.DateTimeFilter(
+        field_name="starting_time",
         lookup_expr="gte",
         widget=forms.DateTimeInput(attrs={"type": "datetime-local"}),
-        label=_("Start from"),
+        label=_("Starts from"),
     )
-    start_to = django_filters.DateTimeFilter(
-        field_name="start_at",
+    starting_to = django_filters.DateTimeFilter(
+        field_name="starting_time",
         lookup_expr="lte",
         widget=forms.DateTimeInput(attrs={"type": "datetime-local"}),
-        label=_("Start to"),
+        label=_("Starts to"),
     )
 
-    late_reg_min = django_filters.NumberFilter(
-        field_name="late_reg_minutes",
-        lookup_expr="gte",
-        label=_("Min late reg (min)"),
-    )
-
-    blind_reset_at_final = django_filters.BooleanFilter(
-        label=_("Blind reset at final table"),
-    )
-
+    early_bird = django_filters.BooleanFilter(label=_("Early bird"))
+    featured_final_table = django_filters.BooleanFilter(label=_("Featured FT"))
     verified_only = django_filters.BooleanFilter(
         field_name="verified_by_admin",
-        label=_("Admin-verified only"),
+        label=_("Verified only"),
     )
 
     class Meta:
         model = Tournament
         fields: list[str] = []  # every filter is declared explicitly above
-
-    # --- buy-in converters --------------------------------------------------
-    # Users type "5" meaning $5, not 500 cents. Convert before hitting the DB.
 
     @staticmethod
     def _to_cents(value: Decimal | float | int) -> int:
@@ -99,11 +95,11 @@ class TournamentFilter(django_filters.FilterSet):
     ) -> QuerySet[Tournament]:
         if value in (None, ""):
             return queryset
-        return queryset.filter(buy_in_cents__gte=self._to_cents(value))
+        return queryset.filter(buy_in_total_cents__gte=self._to_cents(value))
 
     def filter_buy_in_max(
         self, queryset: QuerySet[Tournament], _name: str, value: Any
     ) -> QuerySet[Tournament]:
         if value in (None, ""):
             return queryset
-        return queryset.filter(buy_in_cents__lte=self._to_cents(value))
+        return queryset.filter(buy_in_total_cents__lte=self._to_cents(value))

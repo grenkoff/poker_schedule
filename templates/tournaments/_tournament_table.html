@@ -22,8 +22,6 @@
             </a>
         </th>
         <th>{% trans "Game" %}</th>
-        <th>{% trans "Format" %}</th>
-        <th>{% trans "Size" %}</th>
         <th>
             <a href="?{% querystring sort=sort_links.buy_in page=None %}"
                hx-get="?{% querystring sort=sort_links.buy_in page=None %}"
@@ -33,50 +31,46 @@
             </a>
         </th>
         <th>
-            <a href="?{% querystring sort=sort_links.start_at page=None %}"
-               hx-get="?{% querystring sort=sort_links.start_at page=None %}"
+            <a href="?{% querystring sort=sort_links.guaranteed page=None %}"
+               hx-get="?{% querystring sort=sort_links.guaranteed page=None %}"
                hx-target="#tournament-table"
                hx-push-url="true">
-                {% trans "Start" %}{% if current_sort_key == 'start_at' %}{% if current_sort_desc %} ↓{% else %} ↑{% endif %}{% endif %}
+                {% trans "GTD" %}{% if current_sort_key == 'guaranteed' %}{% if current_sort_desc %} ↓{% else %} ↑{% endif %}{% endif %}
             </a>
         </th>
         <th>
-            <a href="?{% querystring sort=sort_links.late_reg page=None %}"
-               hx-get="?{% querystring sort=sort_links.late_reg page=None %}"
+            <a href="?{% querystring sort=sort_links.starting_time page=None %}"
+               hx-get="?{% querystring sort=sort_links.starting_time page=None %}"
                hx-target="#tournament-table"
                hx-push-url="true">
-                {% trans "Late reg" %}{% if current_sort_key == 'late_reg' %}{% if current_sort_desc %} ↓{% else %} ↑{% endif %}{% endif %}
+                {% trans "Start" %}{% if current_sort_key == 'starting_time' %}{% if current_sort_desc %} ↓{% else %} ↑{% endif %}{% endif %}
             </a>
         </th>
-        <th>{% trans "Final table" %}</th>
+        <th>{% trans "Late reg" %}</th>
+        <th>{% trans "Re-entry" %}</th>
+        <th>{% trans "FT" %}</th>
     </tr>
     </thead>
     <tbody>
     {% for t in tournaments %}
     <tr>
         <td>{{ t.room.name }}</td>
-        <td>{{ t.name }}</td>
+        <td>
+            {{ t.name }}
+            {% if t.featured_final_table %}<span class="tag" title="{% trans 'Featured final table' %}">★ FT</span>{% endif %}
+            {% if t.early_bird %}<span class="tag" title="{% trans 'Early bird' %}">EB</span>{% endif %}
+        </td>
         <td><span class="tag">{{ t.get_game_type_display }}</span></td>
-        <td>{{ t.get_tournament_format_display }}</td>
-        <td>{{ t.get_table_size_display }}</td>
         <td class="buy-in">
-            {{ t.buy_in_cents|money:t.currency }}{% if t.rake_cents %}
-                <span class="muted">+ {{ t.rake_cents|money:t.currency }}</span>
+            {{ t.buy_in_total_cents|money:"USD" }}{% if t.rake_cents %}
+                <span class="muted">({{ t.buy_in_without_rake_cents|money:"USD" }} + {{ t.rake_cents|money:"USD" }})</span>
             {% endif %}
         </td>
-        <td>{{ t.start_at|date:"Y-m-d H:i" }} <span class="muted">{{ t.start_at|date:"T" }}</span></td>
-        <td>
-            {% if t.late_reg_minutes %}
-                {% blocktrans with minutes=t.late_reg_minutes %}{{ minutes }} min{% endblocktrans %}
-            {% else %}
-                <span class="muted">—</span>
-            {% endif %}
-        </td>
-        <td>
-            {{ t.final_table_size }}{% if t.blind_reset_at_final %}
-                <span class="tag" title="{% trans 'Blind reset at final table' %}">{% trans "reset" %}{% if t.blind_reset_level %} L{{ t.blind_reset_level }}{% endif %}</span>
-            {% endif %}
-        </td>
+        <td>${{ t.guaranteed_dollars }}</td>
+        <td>{{ t.starting_time|date:"Y-m-d H:i" }} <span class="muted">{{ t.starting_time|date:"T" }}</span></td>
+        <td>{{ t.late_reg_at|date:"H:i" }} <span class="muted">L{{ t.late_reg_level }}</span></td>
+        <td>{{ t.re_entry.label }}</td>
+        <td>{{ t.players_at_final_table }}</td>
     </tr>
     {% endfor %}
     </tbody>

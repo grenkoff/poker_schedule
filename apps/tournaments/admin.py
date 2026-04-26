@@ -3,113 +3,102 @@ from django.utils.translation import gettext_lazy as _
 
 from apps.users.admin_mixins import StaffAdminMixin
 
-from .models import BlindStructure, Tournament, TournamentResult
+from .forms import TournamentAdminForm
+from .models import (
+    BlindStructure,
+    BubbleOption,
+    EarlyBirdType,
+    ReEntryOption,
+    Tournament,
+)
 
 
 class BlindStructureInline(admin.TabularInline):
     model = BlindStructure
-    extra = 0
-    fields = ("level", "small_blind", "big_blind", "ante", "duration_minutes")
-
-
-class TournamentResultInline(admin.TabularInline):
-    model = TournamentResult
-    extra = 0
-    fields = (
-        "instance_started_at",
-        "entrants",
-        "final_table_avg_bb",
-        "total_prize_pool_cents",
-    )
-    readonly_fields = ("created_at",)
+    extra = 1
+    min_num = 1
+    fields = ("level", "small_blind", "big_blind", "ante")
 
 
 @admin.register(Tournament)
 class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
+    form = TournamentAdminForm
     list_display = (
         "name",
         "room",
         "game_type",
-        "tournament_format",
-        "buy_in_cents",
-        "currency",
-        "start_at",
+        "buy_in_total_cents",
+        "starting_time",
         "submitted_for_review",
         "verified_by_admin",
     )
     list_filter = (
         "room",
         "game_type",
-        "tournament_format",
-        "table_size",
+        "re_entry",
+        "bubble",
+        "early_bird",
+        "featured_final_table",
         "submitted_for_review",
         "verified_by_admin",
-        "blind_reset_at_final",
     )
-    search_fields = ("name", "external_id", "room__name")
-    date_hierarchy = "start_at"
+    search_fields = ("name", "room__name")
+    date_hierarchy = "starting_time"
     autocomplete_fields = ("room",)
-    inlines = (BlindStructureInline, TournamentResultInline)
+    inlines = (BlindStructureInline,)
     actions = ("submit_for_review", "mark_verified", "unmark_verified")
 
     fieldsets = (
-        (None, {"fields": ("room", "external_id", "name")}),
+        (None, {"fields": ("room", "name", "game_type")}),
         (
-            _("Structure"),
-            {
-                "fields": (
-                    "game_type",
-                    "tournament_format",
-                    "table_size",
-                    ("buy_in_cents", "rake_cents", "currency"),
-                    "starting_stack",
-                ),
-            },
+            _("Buy-in (enter any two; the third is auto-derived)"),
+            {"fields": ("buy_in_total", "buy_in_without_rake", "rake")},
+        ),
+        (
+            _("Prize"),
+            {"fields": ("guaranteed_dollars", "payout_percent")},
+        ),
+        (
+            _("Stack"),
+            {"fields": ("starting_stack", "starting_stack_bb")},
         ),
         (
             _("Time"),
             {
                 "fields": (
-                    "start_at",
-                    "late_reg_minutes",
-                    "blind_level_minutes",
-                    "estimated_duration_minutes",
+                    "starting_time",
+                    "late_reg_at",
+                    "late_reg_level",
+                    "blind_interval_minutes",
+                    "break_minutes",
                 ),
             },
         ),
         (
-            _("Final table"),
-            {
-                "fields": (
-                    "final_table_size",
-                    "blind_reset_at_final",
-                    "blind_reset_level",
-                ),
-            },
+            _("Tables"),
+            {"fields": ("players_per_table", "players_at_final_table")},
         ),
         (
-            _("Historical metrics"),
-            {
-                "classes": ("collapse",),
-                "fields": ("avg_entrants", "avg_blinds_at_ft"),
-            },
+            _("Field"),
+            {"fields": ("min_players", "max_players", "re_entry", "bubble")},
         ),
-        (_("Workflow"), {"fields": ("submitted_for_review", "verified_by_admin")}),
+        (
+            _("Features"),
+            {"fields": ("early_bird", "early_bird_type", "featured_final_table")},
+        ),
+        (
+            _("Workflow"),
+            {"fields": ("submitted_for_review", "verified_by_admin")},
+        ),
     )
 
     def get_readonly_fields(self, request, obj=None):
-        # The historical-metric averages are computed by a batch job, never
-        # edited by hand. `verified_by_admin` may only be flipped by a
-        # SUPERADMIN; ADMIN-role staff see it but cannot change it.
-        ro = ["avg_entrants", "avg_blinds_at_ft"]
         if not request.user.is_superuser:
-            ro.append("verified_by_admin")
-        return ro
+            return ("verified_by_admin",)
+        return ()
 
     def get_actions(self, request):
         actions = super().get_actions(request)
-        # `mark_verified` / `unmark_verified` flip a field that ADMIN can't
-        # otherwise touch — keep the actions consistent with that gate.
         if not request.user.is_superuser:
             actions.pop("mark_verified", None)
             actions.pop("unmark_verified", None)
@@ -131,7 +120,26 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         self.message_user(request, _("%d tournament(s) un-verified.") % updated)
 
 
-# `BlindStructure` and `TournamentResult` are intentionally NOT registered
-# at the top level — they're managed inline from `TournamentAdmin` (via
-# `BlindStructureInline` / `TournamentResultInline`). Adding standalone
-# admin pages just clutters the index without giving any new capability.
+# --- Option lookup tables -------------------------------------------------
+
+
+class _OptionAdmin(StaffAdminMixin, admin.ModelAdmin):
+    list_display = ("label", "name", "sort_order")
+    list_editable = ("sort_order",)
+    prepopulated_fields = {"name": ("label",)}
+    ordering = ("sort_order", "label")
+
+
+@admin.register(ReEntryOption)
+class ReEntryOptionAdmin(_OptionAdmin):
+    pass
+
+
+@admin.register(BubbleOption)
+class BubbleOptionAdmin(_OptionAdmin):
+    pass
+
+
+@admin.register(EarlyBirdType)
+class EarlyBirdTypeAdmin(_OptionAdmin):
+    pass

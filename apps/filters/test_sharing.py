@@ -12,7 +12,13 @@ from django.utils import timezone
 
 from apps.filters.models import SharedFilter
 from apps.rooms.models import PokerRoom
-from apps.tournaments.models import GameType, TableSize, Tournament, TournamentFormat
+from apps.tournaments.models import (
+    BubbleOption,
+    EarlyBirdType,
+    GameType,
+    ReEntryOption,
+    Tournament,
+)
 
 User = get_user_model()
 
@@ -30,22 +36,38 @@ def pokerok() -> PokerRoom:
 def _make_tournament(
     room: PokerRoom,
     *,
-    external_id: str,
     name: str = "Test",
     game_type: str = GameType.NLHE,
+    buy_in_total_cents: int = 1100,
+    starting_time: datetime | None = None,
     **extras,
 ) -> Tournament:
+    starting_time = starting_time or (datetime.now(UTC) + timedelta(hours=2))
     defaults = {
         "room": room,
-        "external_id": external_id,
         "name": name,
         "game_type": game_type,
-        "tournament_format": TournamentFormat.FREEZEOUT,
-        "table_size": TableSize.NINE_MAX,
-        "buy_in_cents": 1000,
-        "rake_cents": 100,
-        "currency": "USD",
-        "start_at": datetime.now(UTC) + timedelta(hours=2),
+        "buy_in_total_cents": buy_in_total_cents,
+        "buy_in_without_rake_cents": int(buy_in_total_cents * 10 / 11),
+        "rake_cents": buy_in_total_cents - int(buy_in_total_cents * 10 / 11),
+        "guaranteed_dollars": 10000,
+        "payout_percent": 15,
+        "starting_stack": 10000,
+        "starting_stack_bb": 50,
+        "starting_time": starting_time,
+        "late_reg_at": starting_time + timedelta(hours=1),
+        "late_reg_level": 12,
+        "blind_interval_minutes": 10,
+        "break_minutes": 5,
+        "players_per_table": 9,
+        "players_at_final_table": 9,
+        "min_players": 2,
+        "max_players": 1000,
+        "re_entry": ReEntryOption.objects.get(name="unlimited"),
+        "bubble": BubbleOption.objects.get(name="finalized_when_registration_closes"),
+        "early_bird": False,
+        "early_bird_type": EarlyBirdType.objects.get(name="compensated_at_bubble"),
+        "featured_final_table": False,
     }
     defaults.update(extras)
     return Tournament.objects.create(**defaults)
@@ -150,8 +172,8 @@ def test_share_create_rejects_get(client: Client):
 
 @pytest.mark.django_db
 def test_shared_view_renders_with_stored_filter(client: Client, pokerok: PokerRoom):
-    _make_tournament(pokerok, external_id="nlhe-1", name="NLHE Event", game_type=GameType.NLHE)
-    _make_tournament(pokerok, external_id="plo-1", name="PLO Event", game_type=GameType.PLO)
+    _make_tournament(pokerok, name="NLHE Event", game_type=GameType.NLHE)
+    _make_tournament(pokerok, name="PLO Event", game_type=GameType.PLO)
 
     shared = SharedFilter.objects.create(filter_params="game_type=PLO")
     response = client.get(f"/en/s/{shared.slug}/")
@@ -168,7 +190,7 @@ def test_shared_view_404_for_unknown_slug(client: Client):
 
 @pytest.mark.django_db
 def test_shared_view_404_for_expired_link(client: Client, pokerok: PokerRoom):
-    _make_tournament(pokerok, external_id="x")
+    _make_tournament(pokerok)
     shared = SharedFilter.objects.create(
         filter_params="",
         expires_at=timezone.now() - timedelta(minutes=1),
@@ -179,7 +201,7 @@ def test_shared_view_404_for_expired_link(client: Client, pokerok: PokerRoom):
 
 @pytest.mark.django_db
 def test_shared_view_shows_owner_attribution(client: Client, pokerok: PokerRoom):
-    _make_tournament(pokerok, external_id="x")
+    _make_tournament(pokerok)
     user = User.objects.create_user(username="sharer", email="sharer@example.com", password="x")
     shared = SharedFilter.objects.create(filter_params="", created_by=user)
     response = client.get(f"/en/s/{shared.slug}/")
@@ -189,13 +211,12 @@ def test_shared_view_shows_owner_attribution(client: Client, pokerok: PokerRoom)
 @pytest.mark.django_db
 def test_shared_view_allows_sort_on_top_of_stored_filter(client: Client, pokerok: PokerRoom):
     now = datetime.now(UTC) + timedelta(hours=1)
-    _make_tournament(pokerok, external_id="cheap", name="Cheap", buy_in_cents=100, start_at=now)
+    _make_tournament(pokerok, name="Cheap", buy_in_total_cents=100, starting_time=now)
     _make_tournament(
         pokerok,
-        external_id="expensive",
         name="Expensive",
-        buy_in_cents=10000,
-        start_at=now + timedelta(minutes=5),
+        buy_in_total_cents=10000,
+        starting_time=now + timedelta(minutes=5),
     )
     shared = SharedFilter.objects.create(filter_params="game_type=NLHE")
     response = client.get(f"/en/s/{shared.slug}/?sort=-buy_in")
@@ -208,7 +229,7 @@ def test_shared_view_allows_sort_on_top_of_stored_filter(client: Client, pokerok
 
 @pytest.mark.django_db
 def test_pdf_export_returns_pdf_content(client: Client, pokerok: PokerRoom):
-    _make_tournament(pokerok, external_id="x", name="PDF Event")
+    _make_tournament(pokerok, name="PDF Event")
     response = client.get("/en/export/pdf/")
     assert response.status_code == 200
     assert response["Content-Type"] == "application/pdf"
@@ -218,8 +239,8 @@ def test_pdf_export_returns_pdf_content(client: Client, pokerok: PokerRoom):
 
 @pytest.mark.django_db
 def test_pdf_export_applies_filter(client: Client, pokerok: PokerRoom):
-    _make_tournament(pokerok, external_id="nlhe", name="NLHE Event", game_type=GameType.NLHE)
-    _make_tournament(pokerok, external_id="plo", name="PLO Event", game_type=GameType.PLO)
+    _make_tournament(pokerok, name="NLHE Event", game_type=GameType.NLHE)
+    _make_tournament(pokerok, name="PLO Event", game_type=GameType.PLO)
     # Different filter values have to produce different PDFs — trivially
     # asserting size order is brittle (the filter-summary band can add more
     # bytes than a dropped row saves), so just confirm distinct output.

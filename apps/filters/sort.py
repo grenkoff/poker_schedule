@@ -14,16 +14,15 @@ from apps.tournaments.models import Tournament
 # Key → DB column. Keys are short and stable so shareable URLs survive
 # internal refactors.
 SORT_FIELDS: dict[str, str] = {
-    "start_at": "start_at",
-    "buy_in": "buy_in_cents",
-    "late_reg": "late_reg_minutes",
-    "level_min": "blind_level_minutes",
-    "duration": "estimated_duration_minutes",
+    "starting_time": "starting_time",
+    "buy_in": "buy_in_total_cents",
+    "guaranteed": "guaranteed_dollars",
+    "blind_interval": "blind_interval_minutes",
     "room": "room__name",
     "name": "name",
 }
 
-DEFAULT_SORT = "start_at"
+DEFAULT_SORT = "starting_time"
 
 
 def parse_sort(value: str | None) -> tuple[str, bool]:

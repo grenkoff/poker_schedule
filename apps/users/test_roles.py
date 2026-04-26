@@ -11,7 +11,13 @@ from django.core.management import call_command
 from django.test import Client
 
 from apps.rooms.models import PokerRoom
-from apps.tournaments.models import GameType, TableSize, Tournament, TournamentFormat
+from apps.tournaments.models import (
+    BubbleOption,
+    EarlyBirdType,
+    GameType,
+    ReEntryOption,
+    Tournament,
+)
 from apps.users.models import Role
 
 User = get_user_model()
@@ -27,17 +33,33 @@ def pokerok() -> PokerRoom:
     return PokerRoom.objects.get(slug="pokerok")
 
 
-def _make_tournament(room: PokerRoom, *, external_id: str = "t-1", **extras) -> Tournament:
+def _make_tournament(room: PokerRoom, **extras) -> Tournament:
+    starting_time = datetime.now(UTC) + timedelta(hours=2)
     defaults = {
         "room": room,
-        "external_id": external_id,
         "name": "Test",
         "game_type": GameType.NLHE,
-        "tournament_format": TournamentFormat.FREEZEOUT,
-        "table_size": TableSize.NINE_MAX,
-        "buy_in_cents": 1000,
-        "currency": "USD",
-        "start_at": datetime.now(UTC) + timedelta(hours=2),
+        "buy_in_total_cents": 1100,
+        "buy_in_without_rake_cents": 1000,
+        "rake_cents": 100,
+        "guaranteed_dollars": 10000,
+        "payout_percent": 15,
+        "starting_stack": 10000,
+        "starting_stack_bb": 50,
+        "starting_time": starting_time,
+        "late_reg_at": starting_time + timedelta(hours=1),
+        "late_reg_level": 12,
+        "blind_interval_minutes": 10,
+        "break_minutes": 5,
+        "players_per_table": 9,
+        "players_at_final_table": 9,
+        "min_players": 2,
+        "max_players": 1000,
+        "re_entry": ReEntryOption.objects.get(name="unlimited"),
+        "bubble": BubbleOption.objects.get(name="finalized_when_registration_closes"),
+        "early_bird": False,
+        "early_bird_type": EarlyBirdType.objects.get(name="compensated_at_bubble"),
+        "featured_final_table": False,
     }
     defaults.update(extras)
     return Tournament.objects.create(**defaults)
@@ -165,7 +187,7 @@ def test_superadmin_can_view_user_admin(client: Client):
 
 @pytest.mark.django_db
 def test_admin_role_can_view_tournament_admin(client: Client, pokerok: PokerRoom):
-    _make_tournament(pokerok, external_id="t-1")
+    _make_tournament(pokerok)
     admin_user = User.objects.create_user(
         username="adm", email="adm@example.com", password="x", role=Role.ADMIN
     )
@@ -179,7 +201,7 @@ def test_admin_role_can_view_tournament_admin(client: Client, pokerok: PokerRoom
 
 @pytest.mark.django_db
 def test_admin_role_does_not_see_mark_verified_action(client: Client, pokerok: PokerRoom):
-    _make_tournament(pokerok, external_id="t-1")
+    _make_tournament(pokerok)
     admin_user = User.objects.create_user(
         username="adm", email="adm@example.com", password="x", role=Role.ADMIN
     )
@@ -193,7 +215,7 @@ def test_admin_role_does_not_see_mark_verified_action(client: Client, pokerok: P
 
 @pytest.mark.django_db
 def test_superadmin_sees_all_actions(client: Client, pokerok: PokerRoom):
-    _make_tournament(pokerok, external_id="t-1")
+    _make_tournament(pokerok)
     sa = User.objects.create_user(
         username="sa", email="sa@example.com", password="x", role=Role.SUPERADMIN
     )
@@ -206,7 +228,7 @@ def test_superadmin_sees_all_actions(client: Client, pokerok: PokerRoom):
 
 @pytest.mark.django_db
 def test_admin_role_sees_verified_by_admin_as_readonly(client: Client, pokerok: PokerRoom):
-    t = _make_tournament(pokerok, external_id="t-1")
+    t = _make_tournament(pokerok)
     admin_user = User.objects.create_user(
         username="adm", email="adm@example.com", password="x", role=Role.ADMIN
     )
@@ -220,7 +242,7 @@ def test_admin_role_sees_verified_by_admin_as_readonly(client: Client, pokerok: 
 
 @pytest.mark.django_db
 def test_superadmin_sees_verified_by_admin_as_editable(client: Client, pokerok: PokerRoom):
-    t = _make_tournament(pokerok, external_id="t-1")
+    t = _make_tournament(pokerok)
     sa = User.objects.create_user(
         username="sa", email="sa@example.com", password="x", role=Role.SUPERADMIN
     )
@@ -231,7 +253,7 @@ def test_superadmin_sees_verified_by_admin_as_editable(client: Client, pokerok: 
 
 @pytest.mark.django_db
 def test_submit_for_review_action_sets_flag(client: Client, pokerok: PokerRoom):
-    t = _make_tournament(pokerok, external_id="t-1")
+    t = _make_tournament(pokerok)
     admin_user = User.objects.create_user(
         username="adm", email="adm@example.com", password="x", role=Role.ADMIN
     )
@@ -248,7 +270,7 @@ def test_submit_for_review_action_sets_flag(client: Client, pokerok: PokerRoom):
 
 @pytest.mark.django_db
 def test_mark_verified_action_clears_pending_flag(client: Client, pokerok: PokerRoom):
-    t = _make_tournament(pokerok, external_id="t-1", submitted_for_review=True)
+    t = _make_tournament(pokerok, submitted_for_review=True)
     sa = User.objects.create_user(
         username="sa", email="sa@example.com", password="x", role=Role.SUPERADMIN
     )

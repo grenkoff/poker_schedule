@@ -9,7 +9,13 @@ from django.contrib.auth import get_user_model
 from django.test import Client
 
 from apps.rooms.models import PokerRoom
-from apps.tournaments.models import GameType, TableSize, Tournament, TournamentFormat
+from apps.tournaments.models import (
+    BubbleOption,
+    EarlyBirdType,
+    GameType,
+    ReEntryOption,
+    Tournament,
+)
 
 User = get_user_model()
 
@@ -159,19 +165,34 @@ def test_authenticated_user_timezone_is_applied_to_rendered_times(client: Client
     client.force_login(user)
 
     room = PokerRoom.objects.get(slug="pokerok")
+    starting_time = datetime.now(UTC).replace(
+        hour=19, minute=0, second=0, microsecond=0
+    ) + timedelta(days=1)
     Tournament.objects.create(
         room=room,
-        external_id="tz-1",
         name="Evening Event",
         game_type=GameType.NLHE,
-        tournament_format=TournamentFormat.FREEZEOUT,
-        table_size=TableSize.NINE_MAX,
-        buy_in_cents=1000,
-        currency="USD",
-        # Make the tournament far enough in the future to survive the
-        # upcoming-only filter regardless of when the test runs.
-        start_at=datetime.now(UTC).replace(hour=19, minute=0, second=0, microsecond=0)
-        + timedelta(days=1),
+        buy_in_total_cents=1100,
+        buy_in_without_rake_cents=1000,
+        rake_cents=100,
+        guaranteed_dollars=10000,
+        payout_percent=15,
+        starting_stack=10000,
+        starting_stack_bb=50,
+        starting_time=starting_time,
+        late_reg_at=starting_time + timedelta(hours=1),
+        late_reg_level=12,
+        blind_interval_minutes=10,
+        break_minutes=5,
+        players_per_table=9,
+        players_at_final_table=9,
+        min_players=2,
+        max_players=1000,
+        re_entry=ReEntryOption.objects.get(name="unlimited"),
+        bubble=BubbleOption.objects.get(name="finalized_when_registration_closes"),
+        early_bird=False,
+        early_bird_type=EarlyBirdType.objects.get(name="compensated_at_bubble"),
+        featured_final_table=False,
     )
 
     response = client.get("/en/")
@@ -184,17 +205,34 @@ def test_authenticated_user_timezone_is_applied_to_rendered_times(client: Client
 @pytest.mark.django_db
 def test_anonymous_user_sees_utc(client: Client):
     room = PokerRoom.objects.get(slug="pokerok")
+    starting_time = datetime.now(UTC).replace(
+        hour=19, minute=0, second=0, microsecond=0
+    ) + timedelta(days=1)
     Tournament.objects.create(
         room=room,
-        external_id="tz-2",
         name="UTC Event",
         game_type=GameType.NLHE,
-        tournament_format=TournamentFormat.FREEZEOUT,
-        table_size=TableSize.NINE_MAX,
-        buy_in_cents=1000,
-        currency="USD",
-        start_at=datetime.now(UTC).replace(hour=19, minute=0, second=0, microsecond=0)
-        + timedelta(days=1),
+        buy_in_total_cents=1100,
+        buy_in_without_rake_cents=1000,
+        rake_cents=100,
+        guaranteed_dollars=10000,
+        payout_percent=15,
+        starting_stack=10000,
+        starting_stack_bb=50,
+        starting_time=starting_time,
+        late_reg_at=starting_time + timedelta(hours=1),
+        late_reg_level=12,
+        blind_interval_minutes=10,
+        break_minutes=5,
+        players_per_table=9,
+        players_at_final_table=9,
+        min_players=2,
+        max_players=1000,
+        re_entry=ReEntryOption.objects.get(name="unlimited"),
+        bubble=BubbleOption.objects.get(name="finalized_when_registration_closes"),
+        early_bird=False,
+        early_bird_type=EarlyBirdType.objects.get(name="compensated_at_bubble"),
+        featured_final_table=False,
     )
     response = client.get("/en/")
     body = response.content.decode()

@@ -10,24 +10,25 @@ from django.contrib.auth import get_user_model
 from apps.rooms.models import PokerRoom
 from apps.tournaments.models import (
     BlindStructure,
+    BubbleOption,
+    EarlyBirdType,
     GameType,
-    TableSize,
+    ReEntryOption,
     Tournament,
-    TournamentFormat,
-    TournamentResult,
 )
 
 User = get_user_model()
 
-# Top-level changelist URLs that should render for a superuser.
-# `BlindStructure` and `TournamentResult` are managed only as inlines on
-# Tournament; `Group` and `Site` are unused and unregistered — so none of
-# them appear here.
+# Top-level changelist URLs that should render for a superuser. Inlines
+# (BlindStructure) live inside Tournament; Group + Site are unregistered.
 ADMIN_URLS = [
     "/admin/users/user/",
     "/admin/rooms/network/",
     "/admin/rooms/pokerroom/",
     "/admin/tournaments/tournament/",
+    "/admin/tournaments/reentryoption/",
+    "/admin/tournaments/bubbleoption/",
+    "/admin/tournaments/earlybirdtype/",
 ]
 
 
@@ -49,7 +50,6 @@ def test_admin_add_page_renders(admin_client, url):
     "url",
     [
         "/admin/tournaments/blindstructure/",
-        "/admin/tournaments/tournamentresult/",
         "/admin/auth/group/",
         "/admin/sites/site/",
     ],
@@ -65,22 +65,31 @@ def tournament_with_children() -> Tournament:
     room = PokerRoom.objects.get(slug="pokerok")
     tournament = Tournament.objects.create(
         room=room,
-        external_id="admin-1",
         name="Admin Test Daily",
         game_type=GameType.NLHE,
-        tournament_format=TournamentFormat.FREEZEOUT,
-        table_size=TableSize.NINE_MAX,
-        buy_in_cents=5000,
+        buy_in_total_cents=5500,
+        buy_in_without_rake_cents=5000,
         rake_cents=500,
-        currency="USD",
-        start_at=datetime(2026, 6, 1, 20, 0, tzinfo=UTC),
+        guaranteed_dollars=10000,
+        payout_percent=15,
+        starting_stack=10000,
+        starting_stack_bb=50,
+        starting_time=datetime(2026, 6, 1, 20, 0, tzinfo=UTC),
+        late_reg_at=datetime(2026, 6, 1, 21, 0, tzinfo=UTC),
+        late_reg_level=12,
+        blind_interval_minutes=10,
+        break_minutes=5,
+        players_per_table=9,
+        players_at_final_table=9,
+        min_players=2,
+        max_players=1000,
+        re_entry=ReEntryOption.objects.get(name="unlimited"),
+        bubble=BubbleOption.objects.get(name="finalized_when_registration_closes"),
+        early_bird=False,
+        early_bird_type=EarlyBirdType.objects.get(name="compensated_at_bubble"),
+        featured_final_table=False,
     )
     BlindStructure.objects.create(tournament=tournament, level=1, small_blind=25, big_blind=50)
-    TournamentResult.objects.create(
-        tournament=tournament,
-        instance_started_at=datetime(2026, 6, 1, 20, 0, tzinfo=UTC),
-        entrants=88,
-    )
     return tournament
 
 
