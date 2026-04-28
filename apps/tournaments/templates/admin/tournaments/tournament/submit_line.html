@@ -1,0 +1,13 @@
+{% extends "admin/submit_line.html" %}
+{% load i18n %}
+
+{% block submit-row %}
+  {{ block.super }}
+  {% if show_unverify_button %}
+    <p class="deletelink-box" style="float:left;margin-right:10px;">
+      <button type="submit" name="_unverify" class="button">
+        {% trans "Return for editing" %}
+      </button>
+    </p>
+  {% endif %}
+{% endblock %}

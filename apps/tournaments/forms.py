@@ -1,9 +1,9 @@
 """Custom form for the Tournament admin.
 
-Headline rule: editor enters any *two* of the three buy-in fields
-(`buy-in (with rake)`, `buy-in (without rake)`, `rake`); the third is
-auto-derived. If all three are supplied, they must be consistent —
-`with_rake == without_rake + rake`.
+Headline rule: the editor types `buy_in_without_rake` and `rake`; the
+third field, `buy_in_total`, is computed (`without + rake`) and rendered
+read-only. Any value the user manages to submit for `buy_in_total` is
+ignored server-side.
 
 Money fields are exposed as `DecimalField(max_digits=12, decimal_places=2)`
 so the editor sees and types whole-dollar amounts (e.g. `5.25`); we
@@ -17,7 +17,27 @@ from decimal import Decimal
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
-from .models import Tournament
+from .models import BlindStructure, Tournament
+
+
+class BlindStructureInlineForm(forms.ModelForm):
+    """Custom inline form so the `ante` field renders blank instead of `0`.
+
+    The model still defaults to `0`, so an empty submission saves as `0` —
+    we just don't pre-fill the input.
+    """
+
+    class Meta:
+        model = BlindStructure
+        fields = ("level", "small_blind", "big_blind", "ante")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["ante"].required = False
+        self.fields["ante"].initial = None
+
+    def clean_ante(self):
+        return self.cleaned_data.get("ante") or 0
 
 
 def _to_cents(value: Decimal | None) -> int | None:
@@ -33,24 +53,54 @@ def _to_dollars(cents: int | None) -> Decimal | None:
 
 
 class TournamentAdminForm(forms.ModelForm):
-    buy_in_total = forms.DecimalField(
-        label=_("Buy-in (with rake), $"),
-        max_digits=12,
-        decimal_places=2,
-        required=False,
-    )
     buy_in_without_rake = forms.DecimalField(
         label=_("Buy-in without rake, $"),
         max_digits=12,
         decimal_places=2,
-        required=False,
+        widget=forms.TextInput(attrs={"inputmode": "decimal"}),
     )
     rake = forms.DecimalField(
         label=_("Rake, $"),
         max_digits=12,
         decimal_places=2,
-        required=False,
+        widget=forms.TextInput(attrs={"inputmode": "decimal"}),
     )
+    rake_percent = forms.CharField(
+        label=_("Rake, %"),
+        required=False,
+        widget=forms.TextInput(
+            attrs={
+                "readonly": "readonly",
+                "tabindex": "-1",
+                "style": "background-color: #f0f0f0; cursor: not-allowed;",
+            }
+        ),
+        help_text=_("Auto-computed: rake / (buy-in without rake + rake) × 100."),
+    )
+    buy_in_total = forms.DecimalField(
+        label=_("Buy-in with rake, $"),
+        max_digits=12,
+        decimal_places=2,
+        required=False,
+        widget=forms.TextInput(
+            attrs={
+                "inputmode": "decimal",
+                "readonly": "readonly",
+                "tabindex": "-1",
+                "style": "background-color: #f0f0f0; cursor: not-allowed;",
+            }
+        ),
+        help_text=_("Auto-computed from buy-in without rake + rake."),
+    )
+
+    class Media:
+        js = (
+            "admin/js/buyin_autofill.js",
+            "admin/js/clear_required_errors.js",
+            "admin/js/digits_only.js",
+            "admin/js/early_bird_toggle.js",
+        )
+        css = {"all": ("admin/css/tournament_form.css",)}
 
     class Meta:
         model = Tournament
@@ -79,8 +129,6 @@ class TournamentAdminForm(forms.ModelForm):
             "early_bird",
             "early_bird_type",
             "featured_final_table",
-            "submitted_for_review",
-            "verified_by_admin",
         )
 
     def __init__(self, *args, **kwargs):
@@ -93,45 +141,23 @@ class TournamentAdminForm(forms.ModelForm):
                 self.instance.buy_in_without_rake_cents
             )
             self.fields["rake"].initial = _to_dollars(self.instance.rake_cents)
+            total_cents = self.instance.buy_in_total_cents
+            if total_cents:
+                pct = Decimal(self.instance.rake_cents) * Decimal(100) / Decimal(total_cents)
+                self.fields["rake_percent"].initial = f"{pct:.2f}"
 
     def clean(self):
         cleaned = super().clean()
-        total = cleaned.get("buy_in_total")
         without = cleaned.get("buy_in_without_rake")
         rake = cleaned.get("rake")
 
-        present = sum(v is not None for v in (total, without, rake))
-        if present < 2:
-            raise forms.ValidationError(
-                _(
-                    "Enter at least two of: buy-in (with rake), buy-in (without rake), rake. "
-                    "The third one will be derived."
-                )
-            )
+        if without is None or rake is None:
+            return cleaned
 
-        if total is None:
-            total = without + rake
-        elif without is None:
-            without = total - rake
-        elif rake is None:
-            rake = total - without
-        else:
-            # All three given — validate they agree.
-            if total != without + rake:
-                raise forms.ValidationError(
-                    _(
-                        "Inconsistent buy-in fields: with-rake (%(t)s) ≠ "
-                        "without-rake (%(w)s) + rake (%(r)s)."
-                    )
-                    % {"t": total, "w": without, "r": rake}
-                )
-
-        if min(total, without, rake) < 0:
+        if without < 0 or rake < 0:
             raise forms.ValidationError(_("Buy-in and rake must be non-negative."))
 
-        cleaned["buy_in_total"] = total
-        cleaned["buy_in_without_rake"] = without
-        cleaned["rake"] = rake
+        cleaned["buy_in_total"] = without + rake
         return cleaned
 
     def save(self, commit=True):

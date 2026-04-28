@@ -1,6 +1,6 @@
 """Admin smoke tests: every registered model's changelist, add and change
-pages render for a superuser, and the custom actions on Tournament flip
-the verified flag."""
+pages render for a superuser, and the unverify bulk action on Tournament
+clears the verified flag."""
 
 from datetime import UTC, datetime
 

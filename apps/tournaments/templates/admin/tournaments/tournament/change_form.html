@@ -1,0 +1,13 @@
+{% extends "admin/change_form.html" %}
+{% load i18n %}
+
+{% block content %}
+  {% if show_verified_lock_banner %}
+    <ul class="messagelist">
+      <li class="warning">
+        {% trans "This tournament has been verified by a superadmin. To edit it, ask a superadmin to use the “Return for editing” action." %}
+      </li>
+    </ul>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

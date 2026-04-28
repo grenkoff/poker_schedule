@@ -46,7 +46,7 @@ def _make(
     re_entry_name: str = "unlimited",
     early_bird: bool = False,
     featured_final_table: bool = False,
-    verified_by_admin: bool = False,
+    verified_by_admin: bool = True,
 ) -> Tournament:
     return Tournament.objects.create(
         room=room,

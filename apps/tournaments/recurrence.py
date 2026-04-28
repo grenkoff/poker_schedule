@@ -67,7 +67,6 @@ def regenerate_series(master) -> None:
             early_bird=master.early_bird,
             early_bird_type=master.early_bird_type,
             featured_final_table=master.featured_final_table,
-            submitted_for_review=master.submitted_for_review,
             verified_by_admin=master.verified_by_admin,
         )
         child.save()

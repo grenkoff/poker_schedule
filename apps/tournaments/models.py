@@ -173,7 +173,6 @@ class Tournament(models.Model):
     featured_final_table = models.BooleanField(_("featured final table"))
 
     # --- workflow (kept from before) ------------------------------------
-    submitted_for_review = models.BooleanField(_("submitted for review"), default=False)
     verified_by_admin = models.BooleanField(_("verified by superadmin"), default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
