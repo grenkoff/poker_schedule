@@ -195,6 +195,7 @@ def test_authenticated_user_timezone_is_applied_to_rendered_times(client: Client
         early_bird_type=EarlyBirdType.objects.get(name="compensated_at_bubble"),
         featured_final_table=False,
         periodicity=Periodicity.objects.get(name="one_off"),
+        verified_by_admin=True,
     )
 
     response = client.get("/en/")
@@ -236,6 +237,7 @@ def test_anonymous_user_sees_utc(client: Client):
         early_bird_type=EarlyBirdType.objects.get(name="compensated_at_bubble"),
         featured_final_table=False,
         periodicity=Periodicity.objects.get(name="one_off"),
+        verified_by_admin=True,
     )
     response = client.get("/en/")
     body = response.content.decode()

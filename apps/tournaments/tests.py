@@ -78,7 +78,6 @@ def test_tournament_money_decimal_properties(pokerok):
 @pytest.mark.django_db
 def test_tournament_workflow_defaults(pokerok):
     t = _make_tournament(pokerok)
-    assert t.submitted_for_review is False
     assert t.verified_by_admin is False
 
 

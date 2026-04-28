@@ -84,6 +84,7 @@ def _make_tournament(
         "early_bird_type": EarlyBirdType.objects.get(name="compensated_at_bubble"),
         "featured_final_table": False,
         "periodicity": Periodicity.objects.get(name="one_off"),
+        "verified_by_admin": True,
     }
     defaults.update(overrides)
     return Tournament.objects.create(**defaults)

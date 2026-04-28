@@ -1,0 +1,13 @@
+/* Hide the up/down spinner arrows on every number input on the
+ * Tournament admin page (main form + the Blind levels inline). The
+ * arrows clash with our digits-only typing constraint and just clutter
+ * the layout. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}

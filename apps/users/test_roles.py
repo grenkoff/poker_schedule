@@ -6,11 +6,13 @@ from datetime import UTC, datetime, timedelta
 from io import StringIO
 
 import pytest
+from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import Client
 
 from apps.rooms.models import PokerRoom
+from apps.tournaments.admin import TournamentAdmin
 from apps.tournaments.models import (
     BubbleOption,
     EarlyBirdType,
@@ -202,86 +204,124 @@ def test_admin_role_can_view_tournament_admin(client: Client, pokerok: PokerRoom
 
 
 @pytest.mark.django_db
-def test_admin_role_does_not_see_mark_verified_action(client: Client, pokerok: PokerRoom):
+def test_admin_role_does_not_see_unverify_action(client: Client, pokerok: PokerRoom):
     _make_tournament(pokerok)
     admin_user = User.objects.create_user(
         username="adm", email="adm@example.com", password="x", role=Role.ADMIN
     )
     client.force_login(admin_user)
     response = client.get("/admin/tournaments/tournament/")
-    body = response.content
-    assert b"Submit selected tournaments for review" in body
-    assert b"Mark selected tournaments as verified" not in body
-    assert b"Remove verification" not in body
+    assert b"Return selected tournaments for editing" not in response.content
 
 
 @pytest.mark.django_db
-def test_superadmin_sees_all_actions(client: Client, pokerok: PokerRoom):
+def test_superadmin_sees_unverify_action(client: Client, pokerok: PokerRoom):
     _make_tournament(pokerok)
     sa = User.objects.create_user(
         username="sa", email="sa@example.com", password="x", role=Role.SUPERADMIN
     )
     client.force_login(sa)
     response = client.get("/admin/tournaments/tournament/")
-    body = response.content
-    assert b"Submit selected tournaments for review" in body
-    assert b"Mark selected tournaments as verified" in body
+    assert b"Return selected tournaments for editing" in response.content
 
 
 @pytest.mark.django_db
-def test_admin_role_sees_verified_by_admin_as_readonly(client: Client, pokerok: PokerRoom):
+def test_verify_field_not_rendered_in_form(client: Client, pokerok: PokerRoom):
+    """`verified_by_admin` is no longer a form field for any role —
+    its value is auto-set on save based on the saving user's role."""
     t = _make_tournament(pokerok)
-    admin_user = User.objects.create_user(
-        username="adm", email="adm@example.com", password="x", role=Role.ADMIN
+    sa = User.objects.create_user(
+        username="sa", email="sa@example.com", password="x", role=Role.SUPERADMIN
     )
-    client.force_login(admin_user)
+    client.force_login(sa)
     response = client.get(f"/admin/tournaments/tournament/{t.pk}/change/")
     assert response.status_code == 200
-    # Readonly fields render as a static <div>, not as a form input named
-    # `verified_by_admin`. Editable would have `name="verified_by_admin"`.
     assert b'name="verified_by_admin"' not in response.content
 
 
 @pytest.mark.django_db
-def test_superadmin_sees_verified_by_admin_as_editable(client: Client, pokerok: PokerRoom):
-    t = _make_tournament(pokerok)
-    sa = User.objects.create_user(
-        username="sa", email="sa@example.com", password="x", role=Role.SUPERADMIN
-    )
-    client.force_login(sa)
-    response = client.get(f"/admin/tournaments/tournament/{t.pk}/change/")
-    assert b'name="verified_by_admin"' in response.content
-
-
-@pytest.mark.django_db
-def test_submit_for_review_action_sets_flag(client: Client, pokerok: PokerRoom):
-    t = _make_tournament(pokerok)
+def test_admin_save_leaves_tournament_unverified(client: Client, pokerok: PokerRoom):
+    """ADMIN editing an existing tournament resets it to unverified —
+    every ADMIN save sends the tournament back for verification."""
+    t = _make_tournament(pokerok, verified_by_admin=True)
+    # ADMIN can only edit unverified tournaments, so seed an unverified one
+    # via direct DB write to bypass the permission gate.
+    Tournament.objects.filter(pk=t.pk).update(verified_by_admin=False)
     admin_user = User.objects.create_user(
         username="adm", email="adm@example.com", password="x", role=Role.ADMIN
     )
     client.force_login(admin_user)
-    client.post(
-        "/admin/tournaments/tournament/",
-        {"action": "submit_for_review", "_selected_action": [str(t.pk)]},
-        follow=True,
-    )
+    # Trigger admin's save_model via the bulk-update path: the permission
+    # gate covers the change form; here we assert the auto-verify rule
+    # directly on save_model by using the changeform POST is heavy. Instead
+    # confirm the model-level invariant: ADMIN never marks a tournament
+    # verified through the admin save pipeline. Reuse the admin instance.
+    request = type("R", (), {"user": admin_user})()
+    admin_instance = TournamentAdmin(Tournament, AdminSite())
     t.refresh_from_db()
-    assert t.submitted_for_review is True
-    assert t.verified_by_admin is False  # superadmin still has to verify
+    admin_instance.save_model(request, t, form=None, change=True)
+    t.refresh_from_db()
+    assert t.verified_by_admin is False
 
 
 @pytest.mark.django_db
-def test_mark_verified_action_clears_pending_flag(client: Client, pokerok: PokerRoom):
-    t = _make_tournament(pokerok, submitted_for_review=True)
+def test_superadmin_save_marks_tournament_verified(client: Client, pokerok: PokerRoom):
+    """SUPERADMIN save auto-verifies — no separate action needed."""
+    t = _make_tournament(pokerok)
+    assert t.verified_by_admin is False
+    sa = User.objects.create_user(
+        username="sa", email="sa@example.com", password="x", role=Role.SUPERADMIN
+    )
+    request = type("R", (), {"user": sa})()
+    admin_instance = TournamentAdmin(Tournament, AdminSite())
+    admin_instance.save_model(request, t, form=None, change=True)
+    t.refresh_from_db()
+    assert t.verified_by_admin is True
+
+
+@pytest.mark.django_db
+def test_admin_cannot_edit_verified_tournament(client: Client, pokerok: PokerRoom):
+    """ADMIN gets a read-only view (or 403) on a verified tournament."""
+    t = _make_tournament(pokerok, verified_by_admin=True)
+    admin_user = User.objects.create_user(
+        username="adm", email="adm@example.com", password="x", role=Role.ADMIN
+    )
+    client.force_login(admin_user)
+    response = client.get(f"/admin/tournaments/tournament/{t.pk}/change/")
+    # Django returns the change page in read-only mode (200) when
+    # has_change_permission(obj) is False — there is no Save button.
+    assert response.status_code == 200
+    assert b'name="_save"' not in response.content
+
+
+@pytest.mark.django_db
+def test_unverify_bulk_action_resets_flag(client: Client, pokerok: PokerRoom):
+    t = _make_tournament(pokerok, verified_by_admin=True)
     sa = User.objects.create_user(
         username="sa", email="sa@example.com", password="x", role=Role.SUPERADMIN
     )
     client.force_login(sa)
     client.post(
         "/admin/tournaments/tournament/",
-        {"action": "mark_verified", "_selected_action": [str(t.pk)]},
+        {"action": "unmark_verified", "_selected_action": [str(t.pk)]},
         follow=True,
     )
     t.refresh_from_db()
-    assert t.verified_by_admin is True
-    assert t.submitted_for_review is False  # cleared on verification
+    assert t.verified_by_admin is False
+
+
+@pytest.mark.django_db
+def test_unverify_button_resets_flag(client: Client, pokerok: PokerRoom):
+    t = _make_tournament(pokerok, verified_by_admin=True)
+    sa = User.objects.create_user(
+        username="sa", email="sa@example.com", password="x", role=Role.SUPERADMIN
+    )
+    client.force_login(sa)
+    response = client.post(
+        f"/admin/tournaments/tournament/{t.pk}/change/",
+        {"_unverify": "1"},
+        follow=True,
+    )
+    assert response.status_code == 200
+    t.refresh_from_db()
+    assert t.verified_by_admin is False

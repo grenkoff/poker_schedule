@@ -1,8 +1,10 @@
 """Tournament FilterSet for the public list view.
 
 Surfaces the slice users actually narrow by — room, game, buy-in range,
-starting time window, re-entry / bubble policy, featured FT, and the
-admin-verified flag. Buy-in input is in major units (dollars).
+starting time window, re-entry / bubble policy, and featured FT. Buy-in
+input is in major units (dollars). Verification is enforced server-side
+in the view's base queryset, so unverified tournaments never reach the
+filter.
 """
 
 from __future__ import annotations
@@ -77,10 +79,6 @@ class TournamentFilter(django_filters.FilterSet):
 
     early_bird = django_filters.BooleanFilter(label=_("Early bird"))
     featured_final_table = django_filters.BooleanFilter(label=_("Featured FT"))
-    verified_only = django_filters.BooleanFilter(
-        field_name="verified_by_admin",
-        label=_("Verified only"),
-    )
 
     class Meta:
         model = Tournament
