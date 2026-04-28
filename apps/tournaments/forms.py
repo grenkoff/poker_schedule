@@ -75,7 +75,7 @@ class TournamentAdminForm(forms.ModelForm):
                 "style": "background-color: #f0f0f0; cursor: not-allowed;",
             }
         ),
-        help_text=_("Auto-computed: rake / (buy-in without rake + rake) × 100."),
+        help_text=_("Auto-computed: rake / (buy-in without rake + rake) x 100."),
     )
     buy_in_total = forms.DecimalField(
         label=_("Buy-in with rake, $"),

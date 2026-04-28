@@ -6,11 +6,13 @@ from datetime import UTC, datetime, timedelta
 from io import StringIO
 
 import pytest
+from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import Client
 
 from apps.rooms.models import PokerRoom
+from apps.tournaments.admin import TournamentAdmin
 from apps.tournaments.models import (
     BubbleOption,
     EarlyBirdType,
@@ -254,9 +256,6 @@ def test_admin_save_leaves_tournament_unverified(client: Client, pokerok: PokerR
     # directly on save_model by using the changeform POST is heavy. Instead
     # confirm the model-level invariant: ADMIN never marks a tournament
     # verified through the admin save pipeline. Reuse the admin instance.
-    from apps.tournaments.admin import TournamentAdmin
-    from django.contrib.admin.sites import AdminSite
-
     request = type("R", (), {"user": admin_user})()
     admin_instance = TournamentAdmin(Tournament, AdminSite())
     t.refresh_from_db()
@@ -268,9 +267,6 @@ def test_admin_save_leaves_tournament_unverified(client: Client, pokerok: PokerR
 @pytest.mark.django_db
 def test_superadmin_save_marks_tournament_verified(client: Client, pokerok: PokerRoom):
     """SUPERADMIN save auto-verifies — no separate action needed."""
-    from apps.tournaments.admin import TournamentAdmin
-    from django.contrib.admin.sites import AdminSite
-
     t = _make_tournament(pokerok)
     assert t.verified_by_admin is False
     sa = User.objects.create_user(
