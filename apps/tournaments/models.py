@@ -119,9 +119,27 @@ class Tournament(models.Model):
     starting_stack_bb = models.PositiveIntegerField(_("starting chips (BB)"))
 
     # --- time -----------------------------------------------------------
+    timezone = models.CharField(
+        _("timezone"),
+        max_length=64,
+        default="UTC",
+        help_text=_(
+            "IANA timezone name; controls how starting/late-reg times are"
+            " interpreted on input."
+        ),
+    )
     starting_time = models.DateTimeField(_("starting time"))
+    late_registration_available = models.BooleanField(
+        _("late registration available"),
+        default=True,
+        help_text=_("Uncheck if the tournament has no late-registration."),
+    )
     late_reg_at = models.DateTimeField(_("late registration closes at"))
-    late_reg_level = models.PositiveSmallIntegerField(_("late registration level"))
+    late_reg_level = models.PositiveSmallIntegerField(
+        _("late registration level"),
+        default=1,
+        validators=[MinValueValidator(1)],
+    )
     blind_interval_minutes = models.PositiveSmallIntegerField(_("blind interval (minutes)"))
     break_minutes = models.PositiveSmallIntegerField(_("break time (minutes)"))
 

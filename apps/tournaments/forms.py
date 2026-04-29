@@ -12,12 +12,96 @@ round-trip to cents at save-time so the model stays in integers.
 
 from __future__ import annotations
 
+import zoneinfo
 from decimal import Decimal
 
 from django import forms
+from django.contrib.admin.widgets import (
+    AdminSplitDateTime,
+    BaseAdminDateWidget,
+    BaseAdminTimeWidget,
+)
 from django.utils.translation import gettext_lazy as _
 
 from .models import BlindStructure, Tournament
+
+_GREY_READONLY = {
+    "readonly": "readonly",
+    "tabindex": "-1",
+    "style": "background-color: #f0f0f0; cursor: not-allowed;",
+}
+
+
+class _TournamentDateWidget(BaseAdminDateWidget):
+    """`dd.mm.yyyy` date input that still pulls in admin calendar JS.
+
+    `readonly` keeps the input click-focusable (so the popup-trigger JS
+    still sees the click) while suppressing the keyboard caret — the only
+    edit path is the calendar picker.
+    """
+
+    def __init__(self, attrs=None):
+        merged = {
+            "class": "vDateField tnmt-date-trigger",
+            "placeholder": "dd.mm.yyyy",
+            "autocomplete": "off",
+            "readonly": "readonly",
+            "size": "10",
+            **(attrs or {}),
+        }
+        super().__init__(attrs=merged, format="%d.%m.%Y")
+
+
+class _TournamentTimeWidget(BaseAdminTimeWidget):
+    """`hh:mm` time input. Click opens a custom hour/minute picker; the
+    input itself is `readonly` so the keyboard caret never appears."""
+
+    def __init__(self, attrs=None):
+        merged = {
+            "class": "vTimeField tnmt-time-input",
+            "size": "5",
+            "readonly": "readonly",
+            "autocomplete": "off",
+            **(attrs or {}),
+        }
+        super().__init__(attrs=merged, format="%H:%M")
+
+
+class TournamentSplitDateTimeWidget(AdminSplitDateTime):
+    """Tighter `dd.mm.yyyy` + `hh:mm` split widget.
+
+    Subclassing `AdminSplitDateTime` keeps the admin's `split_datetime.html`
+    template; subclassing `BaseAdmin{Date,Time}Widget` for the inner
+    widgets keeps `calendar.js` + `DateTimeShortcuts.js` in the form's
+    media so the calendar popup is wired up.
+    """
+
+    def __init__(self, attrs=None):
+        widgets = (_TournamentDateWidget(), _TournamentTimeWidget())
+        forms.MultiWidget.__init__(self, widgets, attrs)
+
+
+def _timezone_choices() -> list[tuple[str, str]]:
+    """`(value, label)` pairs sorted by current UTC offset.
+
+    Label format mirrors Windows/Linux system pickers, e.g.
+    `(UTC+03:00) Europe/Moscow`. The IANA name remains the stored value.
+    """
+    from datetime import datetime
+
+    now = datetime.now(tz=zoneinfo.ZoneInfo("UTC"))
+    rows: list[tuple[int, str, str]] = []
+    for name in zoneinfo.available_timezones():
+        offset = zoneinfo.ZoneInfo(name).utcoffset(now)
+        if offset is None:
+            continue
+        total_minutes = int(offset.total_seconds() // 60)
+        sign = "+" if total_minutes >= 0 else "-"
+        h, m = divmod(abs(total_minutes), 60)
+        label = f"(UTC{sign}{h:02d}:{m:02d}) {name}"
+        rows.append((total_minutes, label, name))
+    rows.sort(key=lambda r: (r[0], r[2]))
+    return [(name, label) for _, label, name in rows]
 
 
 class BlindStructureInlineForm(forms.ModelForm):
@@ -68,13 +152,7 @@ class TournamentAdminForm(forms.ModelForm):
     rake_percent = forms.CharField(
         label=_("Rake, %"),
         required=False,
-        widget=forms.TextInput(
-            attrs={
-                "readonly": "readonly",
-                "tabindex": "-1",
-                "style": "background-color: #f0f0f0; cursor: not-allowed;",
-            }
-        ),
+        widget=forms.TextInput(attrs=_GREY_READONLY),
         help_text=_("Auto-computed: rake / (buy-in without rake + rake) x 100."),
     )
     buy_in_total = forms.DecimalField(
@@ -82,15 +160,34 @@ class TournamentAdminForm(forms.ModelForm):
         max_digits=12,
         decimal_places=2,
         required=False,
-        widget=forms.TextInput(
-            attrs={
-                "inputmode": "decimal",
-                "readonly": "readonly",
-                "tabindex": "-1",
-                "style": "background-color: #f0f0f0; cursor: not-allowed;",
-            }
-        ),
+        widget=forms.TextInput(attrs={"inputmode": "decimal", **_GREY_READONLY}),
         help_text=_("Auto-computed from buy-in without rake + rake."),
+    )
+    timezone = forms.ChoiceField(
+        label=_("Timezone"),
+        choices=_timezone_choices,
+        initial="UTC",
+        help_text=_("Wall-clock interpretation of the times below."),
+    )
+    starting_time = forms.SplitDateTimeField(
+        label=_("Starting time"),
+        widget=TournamentSplitDateTimeWidget(),
+        input_date_formats=["%d.%m.%Y"],
+        input_time_formats=["%H:%M"],
+    )
+    late_reg_at = forms.SplitDateTimeField(
+        label=_("Late registration closes at"),
+        widget=TournamentSplitDateTimeWidget(),
+        input_date_formats=["%d.%m.%Y"],
+        input_time_formats=["%H:%M"],
+    )
+    late_registration_duration = forms.CharField(
+        label=_("Late registration duration"),
+        required=False,
+        widget=forms.TextInput(
+            attrs={**_GREY_READONLY, "data-tnmt-duration": "1"}
+        ),
+        help_text=_("Auto-computed from late registration time minus starting time."),
     )
 
     class Media:
@@ -99,6 +196,7 @@ class TournamentAdminForm(forms.ModelForm):
             "admin/js/clear_required_errors.js",
             "admin/js/digits_only.js",
             "admin/js/early_bird_toggle.js",
+            "admin/js/time_fieldset.js",
         )
         css = {"all": ("admin/css/tournament_form.css",)}
 
@@ -114,7 +212,9 @@ class TournamentAdminForm(forms.ModelForm):
             "payout_percent",
             "starting_stack",
             "starting_stack_bb",
+            "timezone",
             "starting_time",
+            "late_registration_available",
             "late_reg_at",
             "late_reg_level",
             "blind_interval_minutes",
@@ -133,6 +233,10 @@ class TournamentAdminForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # Surface the model-level minimum to the HTML widget so the
+        # browser spinner and constraint validation enforce `>= 1`.
+        if "late_reg_level" in self.fields:
+            self.fields["late_reg_level"].widget.attrs.setdefault("min", "1")
         # Pre-fill the three Decimal fields from existing cents values
         # when editing an existing tournament.
         if self.instance and self.instance.pk:
@@ -146,18 +250,45 @@ class TournamentAdminForm(forms.ModelForm):
                 pct = Decimal(self.instance.rake_cents) * Decimal(100) / Decimal(total_cents)
                 self.fields["rake_percent"].initial = f"{pct:.2f}"
 
+        # Late-reg fields are conditionally required: the checkbox state
+        # decides. On a bound submission with the checkbox unchecked, the
+        # date/time/level inputs may be blank — drop their `required`
+        # flag so Django doesn't reject the form before clean() can pin
+        # safe defaults.
+        if self.is_bound:
+            available = self.data.get("late_registration_available")
+            if not available:
+                for name in ("late_reg_at", "late_reg_level"):
+                    if name in self.fields:
+                        self.fields[name].required = False
+
     def clean(self):
         cleaned = super().clean()
         without = cleaned.get("buy_in_without_rake")
         rake = cleaned.get("rake")
+        if without is not None and rake is not None:
+            if without < 0 or rake < 0:
+                raise forms.ValidationError(_("Buy-in and rake must be non-negative."))
+            cleaned["buy_in_total"] = without + rake
 
-        if without is None or rake is None:
-            return cleaned
-
-        if without < 0 or rake < 0:
-            raise forms.ValidationError(_("Buy-in and rake must be non-negative."))
-
-        cleaned["buy_in_total"] = without + rake
+        starts = cleaned.get("starting_time")
+        # When late-reg is disabled the close-time defaults to the start
+        # time and the level defaults to 0, so the model-level NOT NULL
+        # constraints stay satisfied without forcing the editor to fill
+        # the (greyed-out) inputs.
+        if cleaned.get("late_registration_available") is False:
+            if starts:
+                cleaned["late_reg_at"] = starts
+                self.errors.pop("late_reg_at", None)
+            cleaned["late_reg_level"] = 1
+            self.errors.pop("late_reg_level", None)
+        else:
+            late = cleaned.get("late_reg_at")
+            if starts and late and late < starts:
+                self.add_error(
+                    "late_reg_at",
+                    _("Late registration cannot close before the tournament starts."),
+                )
         return cleaned
 
     def save(self, commit=True):
