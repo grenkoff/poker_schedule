@@ -184,9 +184,7 @@ class TournamentAdminForm(forms.ModelForm):
     late_registration_duration = forms.CharField(
         label=_("Late registration duration"),
         required=False,
-        widget=forms.TextInput(
-            attrs={**_GREY_READONLY, "data-tnmt-duration": "1"}
-        ),
+        widget=forms.TextInput(attrs={**_GREY_READONLY, "data-tnmt-duration": "1"}),
         help_text=_("Auto-computed from late registration time minus starting time."),
     )
 

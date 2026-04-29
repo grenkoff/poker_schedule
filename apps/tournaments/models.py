@@ -124,8 +124,7 @@ class Tournament(models.Model):
         max_length=64,
         default="UTC",
         help_text=_(
-            "IANA timezone name; controls how starting/late-reg times are"
-            " interpreted on input."
+            "IANA timezone name; controls how starting/late-reg times are interpreted on input."
         ),
     )
     starting_time = models.DateTimeField(_("starting time"))
