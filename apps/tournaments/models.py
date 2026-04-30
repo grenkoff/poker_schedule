@@ -115,8 +115,16 @@ class Tournament(models.Model):
     )
 
     # --- stack ----------------------------------------------------------
-    starting_stack = models.PositiveIntegerField(_("starting chips"))
-    starting_stack_bb = models.PositiveIntegerField(_("starting chips (BB)"))
+    starting_stack = models.PositiveIntegerField(
+        _("starting chips"),
+        default=10000,
+        validators=[MinValueValidator(1)],
+    )
+    starting_stack_bb = models.PositiveIntegerField(
+        _("starting chips (BB)"),
+        default=100,
+        validators=[MinValueValidator(1)],
+    )
 
     # --- time -----------------------------------------------------------
     timezone = models.CharField(
@@ -139,16 +147,40 @@ class Tournament(models.Model):
         default=1,
         validators=[MinValueValidator(1)],
     )
-    blind_interval_minutes = models.PositiveSmallIntegerField(_("blind interval (minutes)"))
-    break_minutes = models.PositiveSmallIntegerField(_("break time (minutes)"))
+    blind_interval_minutes = models.PositiveSmallIntegerField(
+        _("blind interval (minutes)"),
+        default=1,
+        validators=[MinValueValidator(1)],
+    )
+    break_minutes = models.PositiveSmallIntegerField(
+        _("break time (minutes)"),
+        default=5,
+        validators=[MinValueValidator(1)],
+    )
 
     # --- table sizing ---------------------------------------------------
-    players_per_table = models.PositiveSmallIntegerField(_("players per table"))
-    players_at_final_table = models.PositiveSmallIntegerField(_("players at the final table"))
+    players_per_table = models.PositiveSmallIntegerField(
+        _("players per table"),
+        default=8,
+        validators=[MinValueValidator(2), MaxValueValidator(10)],
+    )
+    players_at_final_table = models.PositiveSmallIntegerField(
+        _("players at the final table"),
+        default=8,
+        validators=[MinValueValidator(2), MaxValueValidator(10)],
+    )
 
     # --- field controls -------------------------------------------------
-    min_players = models.PositiveIntegerField(_("min players"))
-    max_players = models.PositiveIntegerField(_("max players"))
+    min_players = models.PositiveIntegerField(
+        _("min players"),
+        default=3,
+        validators=[MinValueValidator(2)],
+    )
+    max_players = models.PositiveIntegerField(
+        _("max players"),
+        default=8000,
+        validators=[MinValueValidator(2)],
+    )
     re_entry = models.ForeignKey(
         ReEntryOption,
         on_delete=models.PROTECT,

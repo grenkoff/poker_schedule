@@ -119,6 +119,11 @@ class BlindStructureInlineForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["ante"].required = False
         self.fields["ante"].initial = None
+        # `small_blind` is always derived from `big_blind` via JS — never
+        # user-editable. The first row's `big_blind` is also derived
+        # (from the parent tournament's starting stack / BB count); the
+        # JS hook adds readonly to that single input at runtime.
+        self.fields["small_blind"].widget.attrs.update(_GREY_READONLY)
 
     def clean_ante(self):
         return self.cleaned_data.get("ante") or 0
@@ -195,6 +200,7 @@ class TournamentAdminForm(forms.ModelForm):
             "admin/js/digits_only.js",
             "admin/js/early_bird_toggle.js",
             "admin/js/time_fieldset.js",
+            "admin/js/blind_levels_autonumber.js",
         )
         css = {"all": ("admin/css/tournament_form.css",)}
 
@@ -231,10 +237,26 @@ class TournamentAdminForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Surface the model-level minimum to the HTML widget so the
-        # browser spinner and constraint validation enforce `>= 1`.
-        if "late_reg_level" in self.fields:
-            self.fields["late_reg_level"].widget.attrs.setdefault("min", "1")
+        # Surface the model-level bounds to the HTML widget. Note: a
+        # `setdefault("min", ...)` would be a no-op because Django's
+        # `PositiveSmallIntegerField.formfield()` injects `min_value=0`,
+        # so the attr already exists. Assign directly to override.
+        for name in (
+            "late_reg_level",
+            "blind_interval_minutes",
+            "break_minutes",
+            "starting_stack",
+            "starting_stack_bb",
+        ):
+            if name in self.fields:
+                self.fields[name].widget.attrs["min"] = "1"
+        for name in ("players_per_table", "players_at_final_table"):
+            if name in self.fields:
+                self.fields[name].widget.attrs["min"] = "2"
+                self.fields[name].widget.attrs["max"] = "10"
+        for name in ("min_players", "max_players"):
+            if name in self.fields:
+                self.fields[name].widget.attrs["min"] = "2"
         # Pre-fill the three Decimal fields from existing cents values
         # when editing an existing tournament.
         if self.instance and self.instance.pk:
@@ -268,6 +290,14 @@ class TournamentAdminForm(forms.ModelForm):
             if without < 0 or rake < 0:
                 raise forms.ValidationError(_("Buy-in and rake must be non-negative."))
             cleaned["buy_in_total"] = without + rake
+
+        min_p = cleaned.get("min_players")
+        max_p = cleaned.get("max_players")
+        if min_p is not None and max_p is not None and max_p < min_p:
+            self.add_error(
+                "max_players",
+                _("Max players cannot be less than min players."),
+            )
 
         starts = cleaned.get("starting_time")
         # When late-reg is disabled the close-time defaults to the start

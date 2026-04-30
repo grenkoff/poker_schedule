@@ -616,22 +616,79 @@
         }
     }
 
-    /** Clamp `late_reg_level` to its model minimum (1) on every edit so
-     *  the user can't even momentarily type 0 — `min="1"` on the widget
-     *  alone only blocks at submit time. */
-    function clampLateRegLevel() {
-        const inp = document.getElementById("id_late_reg_level");
-        if (!inp) return;
-        function clamp() {
-            if (inp.disabled) return;
-            const v = inp.value.trim();
-            if (v === "") return;
-            const n = parseInt(v, 10);
-            if (!isNaN(n) && n < 1) inp.value = "1";
+    /** Clamp integer fields to their HTML `min`/`max` on every edit so
+     *  out-of-range values can't even be typed — `min`/`max` on the
+     *  widget alone only block at submit time. Respects the per-field
+     *  attrs we set in `TournamentAdminForm.__init__`. */
+    function clampBoundedIntFields() {
+        const ids = [
+            "id_late_reg_level",
+            "id_blind_interval_minutes",
+            "id_break_minutes",
+            "id_players_per_table",
+            "id_players_at_final_table",
+            "id_min_players",
+            "id_max_players",
+            "id_starting_stack",
+            "id_starting_stack_bb",
+        ];
+        ids.forEach(function (id) {
+            const inp = document.getElementById(id);
+            if (!inp) return;
+            function clamp() {
+                if (inp.disabled) return;
+                const v = inp.value.trim();
+                if (v === "") return;
+                const n = parseInt(v, 10);
+                if (isNaN(n)) return;
+                // Read min/max on each call — they may be dynamically
+                // updated by other handlers (min_players ↔ max_players
+                // coupling).
+                const lo = inp.min !== "" ? parseInt(inp.min, 10) : null;
+                const hi = inp.max !== "" ? parseInt(inp.max, 10) : null;
+                if (lo !== null && n < lo) inp.value = String(lo);
+                else if (hi !== null && n > hi) inp.value = String(hi);
+            }
+            inp.addEventListener("input", clamp);
+            inp.addEventListener("change", clamp);
+            inp.addEventListener("blur", clamp);
+        });
+    }
+
+    /** Maintain `min_players <= max_players` by snapping the *other*
+     *  field whenever one is edited. We deliberately do NOT couple the
+     *  HTML `min`/`max` between the pair — that would block the spinner
+     *  from crossing the boundary. Instead, dragging `max` below `min`
+     *  pulls `min` down to match (and vice versa). The absolute floor
+     *  of 2 (set by the form widget) still applies. */
+    function bindMinMaxPlayersCoupling() {
+        const minInp = document.getElementById("id_min_players");
+        const maxInp = document.getElementById("id_max_players");
+        if (!minInp || !maxInp) return;
+
+        function syncFromMin() {
+            const minVal = parseInt(minInp.value, 10);
+            if (isNaN(minVal)) return;
+            const maxVal = parseInt(maxInp.value, 10);
+            if (!isNaN(maxVal) && maxVal < minVal) {
+                maxInp.value = String(minVal);
+            }
         }
-        inp.addEventListener("input", clamp);
-        inp.addEventListener("change", clamp);
-        inp.addEventListener("blur", clamp);
+        function syncFromMax() {
+            const maxVal = parseInt(maxInp.value, 10);
+            if (isNaN(maxVal)) return;
+            const minVal = parseInt(minInp.value, 10);
+            if (!isNaN(minVal) && minVal > maxVal) {
+                minInp.value = String(maxVal);
+            }
+        }
+
+        ["input", "change", "blur"].forEach(function (evt) {
+            minInp.addEventListener(evt, syncFromMin);
+            maxInp.addEventListener(evt, syncFromMax);
+        });
+        syncFromMin();
+        syncFromMax();
     }
 
     function init() {
@@ -645,7 +702,8 @@
         clientSideOrderingValidation();
         bindGlobalDismissers();
         bindDatePickerGating();
-        clampLateRegLevel();
+        clampBoundedIntFields();
+        bindMinMaxPlayersCoupling();
     }
 
     // Django's DateTimeShortcuts.init also runs on window.load; we register
