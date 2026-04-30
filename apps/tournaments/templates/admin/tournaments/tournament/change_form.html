@@ -9,5 +9,11 @@
       </li>
     </ul>
   {% endif %}
+  {% if request.user.is_authenticated %}
+    <span id="tnmt-user-tz"
+          data-user-tz="{{ request.user.timezone|default:'UTC' }}"
+          data-is-add="{% if add %}1{% else %}0{% endif %}"
+          style="display:none"></span>
+  {% endif %}
   {{ block.super }}
 {% endblock %}

@@ -82,6 +82,136 @@ def test_tournament_workflow_defaults(pokerok):
 
 
 @pytest.mark.django_db
+def test_tournament_timezone_default_is_utc(pokerok):
+    t = _make_tournament(pokerok)
+    assert t.timezone == "UTC"
+
+
+@pytest.mark.django_db
+def test_admin_form_rejects_late_reg_before_start(pokerok):
+    from apps.tournaments.forms import TournamentAdminForm
+
+    form = TournamentAdminForm(
+        data={
+            "room": str(pokerok.pk),
+            "name": "X",
+            "game_type": GameType.NLHE,
+            "buy_in_without_rake": "10.00",
+            "rake": "1.00",
+            "guaranteed_dollars": "100",
+            "payout_percent": "15",
+            "starting_stack": "10000",
+            "starting_stack_bb": "50",
+            "timezone": "UTC",
+            "late_registration_available": "on",
+            "starting_time_0": "01.05.2026",
+            "starting_time_1": "20:00",
+            "late_reg_at_0": "01.05.2026",
+            "late_reg_at_1": "19:30",
+            "late_reg_level": "12",
+            "blind_interval_minutes": "10",
+            "break_minutes": "5",
+            "players_per_table": "9",
+            "players_at_final_table": "9",
+            "min_players": "2",
+            "max_players": "1000",
+            "re_entry": str(ReEntryOption.objects.get(name="unlimited").pk),
+            "bubble": str(BubbleOption.objects.get(name="finalized_when_registration_closes").pk),
+            "periodicity": str(Periodicity.objects.get(name="one_off").pk),
+            "early_bird": "",
+            "early_bird_type": str(EarlyBirdType.objects.get(name="compensated_at_bubble").pk),
+            "featured_final_table": "",
+        }
+    )
+    assert not form.is_valid()
+    assert "late_reg_at" in form.errors
+
+
+@pytest.mark.django_db
+def test_admin_form_pins_late_reg_to_start_when_disabled(pokerok):
+    from apps.tournaments.forms import TournamentAdminForm
+
+    form = TournamentAdminForm(
+        data={
+            "room": str(pokerok.pk),
+            "name": "Z",
+            "game_type": GameType.NLHE,
+            "buy_in_without_rake": "10.00",
+            "rake": "1.00",
+            "guaranteed_dollars": "100",
+            "payout_percent": "15",
+            "starting_stack": "10000",
+            "starting_stack_bb": "50",
+            "timezone": "UTC",
+            # checkbox missing => unchecked
+            "starting_time_0": "01.05.2026",
+            "starting_time_1": "20:00",
+            # Late inputs left blank — clean() should pin them to start.
+            "late_reg_at_0": "",
+            "late_reg_at_1": "",
+            "late_reg_level": "12",
+            "blind_interval_minutes": "10",
+            "break_minutes": "5",
+            "players_per_table": "9",
+            "players_at_final_table": "9",
+            "min_players": "2",
+            "max_players": "1000",
+            "re_entry": str(ReEntryOption.objects.get(name="unlimited").pk),
+            "bubble": str(BubbleOption.objects.get(name="finalized_when_registration_closes").pk),
+            "periodicity": str(Periodicity.objects.get(name="one_off").pk),
+            "early_bird": "",
+            "early_bird_type": str(EarlyBirdType.objects.get(name="compensated_at_bubble").pk),
+            "featured_final_table": "",
+        }
+    )
+    assert form.is_valid(), form.errors
+    saved = form.save()
+    assert saved.late_registration_available is False
+    assert saved.late_reg_at == saved.starting_time
+
+
+@pytest.mark.django_db
+def test_admin_form_saves_timezone(pokerok):
+    from apps.tournaments.forms import TournamentAdminForm
+
+    form = TournamentAdminForm(
+        data={
+            "room": str(pokerok.pk),
+            "name": "TZ Tournament",
+            "game_type": GameType.NLHE,
+            "buy_in_without_rake": "10.00",
+            "rake": "1.00",
+            "guaranteed_dollars": "100",
+            "payout_percent": "15",
+            "starting_stack": "10000",
+            "starting_stack_bb": "50",
+            "timezone": "Europe/Moscow",
+            "late_registration_available": "on",
+            "starting_time_0": "01.05.2026",
+            "starting_time_1": "19:00",
+            "late_reg_at_0": "01.05.2026",
+            "late_reg_at_1": "20:00",
+            "late_reg_level": "12",
+            "blind_interval_minutes": "10",
+            "break_minutes": "5",
+            "players_per_table": "9",
+            "players_at_final_table": "9",
+            "min_players": "2",
+            "max_players": "1000",
+            "re_entry": str(ReEntryOption.objects.get(name="unlimited").pk),
+            "bubble": str(BubbleOption.objects.get(name="finalized_when_registration_closes").pk),
+            "periodicity": str(Periodicity.objects.get(name="one_off").pk),
+            "early_bird": "",
+            "early_bird_type": str(EarlyBirdType.objects.get(name="compensated_at_bubble").pk),
+            "featured_final_table": "",
+        }
+    )
+    assert form.is_valid(), form.errors
+    saved = form.save()
+    assert saved.timezone == "Europe/Moscow"
+
+
+@pytest.mark.django_db
 def test_blind_level_unique_per_tournament(pokerok):
     tournament = _make_tournament(pokerok)
     BlindStructure.objects.create(tournament=tournament, level=1, small_blind=10, big_blind=20)

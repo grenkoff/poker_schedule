@@ -70,8 +70,11 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
             _("Time"),
             {
                 "fields": (
+                    "timezone",
                     "starting_time",
+                    "late_registration_available",
                     "late_reg_at",
+                    "late_registration_duration",
                     "late_reg_level",
                     "blind_interval_minutes",
                     "break_minutes",
