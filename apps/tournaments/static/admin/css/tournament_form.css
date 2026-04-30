@@ -1,3 +1,9 @@
+/* Wider input for the starting chip count — five-digit defaults like
+ * 10000 wrap awkwardly in the admin's default ~5ch number widget. */
+#id_starting_stack {
+    width: 8em;
+}
+
 /* --- Time fieldset ---------------------------------------------------- */
 
 /* Tighter spacing between the date/time rows of a SplitDateTime widget. */
@@ -76,11 +82,12 @@ input.tnmt-time-input {
     background-size: 16px 16px;
 }
 
-/* Disabled date/time/level inputs (gating: starting time empty, or
- * "Late registration available" checkbox off). */
+/* Disabled date/time/level/select inputs (gating: starting time empty,
+ * "Late registration available" checkbox off, or "Early bird" off). */
 input.tnmt-time-input:disabled,
 input.tnmt-date-trigger:disabled,
-#id_late_reg_level:disabled {
+#id_late_reg_level:disabled,
+#id_early_bird_type:disabled {
     background-color: #f0f0f0;
     cursor: not-allowed;
     color: #888;
