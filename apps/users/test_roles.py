@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from io import StringIO
 
 import pytest
@@ -42,9 +43,9 @@ def _make_tournament(room: PokerRoom, **extras) -> Tournament:
         "room": room,
         "name": "Test",
         "game_type": GameType.NLHE,
-        "buy_in_total_cents": 1100,
-        "buy_in_without_rake_cents": 1000,
-        "rake_cents": 100,
+        "buy_in_total": Decimal("11.00"),
+        "buy_in_without_rake": Decimal("10.00"),
+        "rake": Decimal("1.00"),
         "guaranteed_dollars": 10000,
         "payout_percent": 15,
         "starting_stack": 10000,
@@ -215,17 +216,6 @@ def test_admin_role_does_not_see_unverify_action(client: Client, pokerok: PokerR
 
 
 @pytest.mark.django_db
-def test_superadmin_sees_unverify_action(client: Client, pokerok: PokerRoom):
-    _make_tournament(pokerok)
-    sa = User.objects.create_user(
-        username="sa", email="sa@example.com", password="x", role=Role.SUPERADMIN
-    )
-    client.force_login(sa)
-    response = client.get("/admin/tournaments/tournament/")
-    assert b"Return selected tournaments for editing" in response.content
-
-
-@pytest.mark.django_db
 def test_verify_field_not_rendered_in_form(client: Client, pokerok: PokerRoom):
     """`verified_by_admin` is no longer a form field for any role —
     its value is auto-set on save based on the saving user's role."""
@@ -292,22 +282,6 @@ def test_admin_cannot_edit_verified_tournament(client: Client, pokerok: PokerRoo
     # has_change_permission(obj) is False — there is no Save button.
     assert response.status_code == 200
     assert b'name="_save"' not in response.content
-
-
-@pytest.mark.django_db
-def test_unverify_bulk_action_resets_flag(client: Client, pokerok: PokerRoom):
-    t = _make_tournament(pokerok, verified_by_admin=True)
-    sa = User.objects.create_user(
-        username="sa", email="sa@example.com", password="x", role=Role.SUPERADMIN
-    )
-    client.force_login(sa)
-    client.post(
-        "/admin/tournaments/tournament/",
-        {"action": "unmark_verified", "_selected_action": [str(t.pk)]},
-        follow=True,
-    )
-    t.refresh_from_db()
-    assert t.verified_by_admin is False
 
 
 @pytest.mark.django_db

@@ -107,8 +107,8 @@
             </td>
             <td><span class="tag">{{ t.get_game_type_display }}</span></td>
             <td>
-                {{ t.buy_in_total_cents|money:"USD" }}
-                <span class="muted">({{ t.buy_in_without_rake_cents|money:"USD" }} + {{ t.rake_cents|money:"USD" }})</span>
+                {{ t.buy_in_total|money:"USD" }}
+                <span class="muted">({{ t.buy_in_without_rake|money:"USD" }} + {{ t.rake|money:"USD" }})</span>
             </td>
             <td>${{ t.guaranteed_dollars }}</td>
             <td>{{ t.starting_time|date:"Y-m-d H:i T" }}</td>

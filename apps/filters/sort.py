@@ -15,7 +15,7 @@ from apps.tournaments.models import Tournament
 # internal refactors.
 SORT_FIELDS: dict[str, str] = {
     "starting_time": "starting_time",
-    "buy_in": "buy_in_total_cents",
+    "buy_in": "buy_in_total",
     "guaranteed": "guaranteed_dollars",
     "blind_interval": "blind_interval_minutes",
     "room": "room__name",

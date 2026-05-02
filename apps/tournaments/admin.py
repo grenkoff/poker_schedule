@@ -27,27 +27,42 @@ class BlindStructureInline(admin.TabularInline):
 @admin.register(Tournament)
 class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     form = TournamentAdminForm
+
+    class Media:
+        js = ("admin/js/changelist_columns.js",)
+        css = {"all": ("admin/css/changelist_columns.css",)}
+
     list_display = (
-        "name",
+        "name_display",
         "room",
         "game_type",
-        "buy_in_total_cents",
-        "starting_time",
-        "periodicity",
-        "verified_by_admin",
-    )
-    list_filter = (
-        "room",
-        "game_type",
+        "buy_in_dollars",
+        "buy_in_without_rake_display",
+        "rake_display",
+        "rake_percent_display",
+        "guaranteed_dollars",
+        "payout_percent",
+        "starting_stack",
+        "starting_stack_bb",
+        "starting_time_fmt",
+        "late_registration_available",
+        "late_reg_at_fmt",
+        "late_registration_duration",
+        "late_reg_level",
+        "blind_interval_minutes",
+        "players_per_table",
+        "players_at_final_table",
+        "min_players",
+        "max_players",
         "re_entry",
-        "bubble",
-        "periodicity",
         "early_bird",
         "featured_final_table",
         "verified_by_admin",
     )
+    list_select_related = ("room", "re_entry")
+    list_per_page = 100
+    list_filter = ()
     search_fields = ("name", "room__name")
-    date_hierarchy = "starting_time"
     autocomplete_fields = ("room",)
     inlines = (BlindStructureInline,)
     actions = ("mark_verified", "unmark_verified")
@@ -146,12 +161,45 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
                 extra_context["show_verified_lock_banner"] = True
         return super().change_view(request, object_id, form_url, extra_context)
 
+    @admin.display(description="Buy-in without rake, $", ordering="buy_in_without_rake")
+    def buy_in_without_rake_display(self, obj):
+        return f"{obj.buy_in_without_rake:.2f}"
+
+    @admin.display(description="Rake, $", ordering="rake")
+    def rake_display(self, obj):
+        return f"{obj.rake:.2f}"
+
+    @admin.display(description="Rake %")
+    def rake_percent_display(self, obj):
+        if obj.buy_in_total:
+            return f"{obj.rake / obj.buy_in_total * 100:.2f}"
+        return "—"
+
+    @admin.display(description="Starting time", ordering="starting_time")
+    def starting_time_fmt(self, obj):
+        return obj.starting_time.strftime("%d.%m.%Y %H:%M") if obj.starting_time else "—"
+
+    @admin.display(description="Late registration closes at", ordering="late_reg_at")
+    def late_reg_at_fmt(self, obj):
+        return obj.late_reg_at.strftime("%d.%m.%Y %H:%M") if obj.late_reg_at else "—"
+
+    @admin.display(description="Buy-in with rake, $", ordering="buy_in_total")
+    def buy_in_dollars(self, obj):
+        return f"{obj.buy_in_total:.2f}"
+
+    @admin.display(description="Name", ordering="name")
+    def name_display(self, obj):
+        return obj.name
+
+    @admin.display(description=_("Late registration duration"))
+    def late_registration_duration(self, obj):
+        if obj.late_reg_at and obj.starting_time:
+            minutes = int((obj.late_reg_at - obj.starting_time).total_seconds() // 60)
+            return f"{minutes} min"
+        return "—"
+
     def get_actions(self, request):
-        actions = super().get_actions(request)
-        if not request.user.is_superuser:
-            actions.pop("mark_verified", None)
-            actions.pop("unmark_verified", None)
-        return actions
+        return {}
 
     @admin.action(description=_("Mark selected tournaments as verified"))
     def mark_verified(self, request, queryset):

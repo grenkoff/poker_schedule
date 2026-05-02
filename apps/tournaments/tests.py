@@ -29,9 +29,9 @@ def _make_tournament(room: PokerRoom, **overrides) -> Tournament:
         "room": room,
         "name": "Test Tournament",
         "game_type": GameType.NLHE,
-        "buy_in_total_cents": 1100,
-        "buy_in_without_rake_cents": 1000,
-        "rake_cents": 100,
+        "buy_in_total": Decimal("11.00"),
+        "buy_in_without_rake": Decimal("10.00"),
+        "rake": Decimal("1.00"),
         "guaranteed_dollars": 10000,
         "payout_percent": 15,
         "starting_stack": 10000,
@@ -66,9 +66,9 @@ def test_tournament_str_includes_room_and_name(pokerok):
 def test_tournament_money_decimal_properties(pokerok):
     tournament = _make_tournament(
         pokerok,
-        buy_in_total_cents=1100,
-        buy_in_without_rake_cents=1000,
-        rake_cents=100,
+        buy_in_total=Decimal("11.00"),
+        buy_in_without_rake=Decimal("10.00"),
+        rake=Decimal("1.00"),
     )
     assert tournament.buy_in_total == Decimal("11.00")
     assert tournament.buy_in_without_rake == Decimal("10.00")

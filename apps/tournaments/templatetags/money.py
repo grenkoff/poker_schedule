@@ -23,16 +23,15 @@ _CURRENCY_SYMBOLS = {
 
 
 @register.filter
-def money(cents: int | None, currency: str = "USD") -> str:
-    """`{{ tournament.buy_in_cents|money:tournament.currency }}` → "$10.00".
+def money(amount: Decimal | int | None, currency: str = "USD") -> str:
+    """`{{ tournament.buy_in_total|money:tournament.currency }}` → "$10.00".
 
     Unknown currencies are prefixed with their ISO code: "CAD 12.50".
     Known single-char symbols are prefixed directly: "$10.00".
     """
-    if cents is None:
+    if amount is None:
         return ""
-    amount = Decimal(cents) / Decimal(100)
-    formatted = f"{amount:,.2f}"
+    formatted = f"{Decimal(amount):,.2f}"
     symbol = _CURRENCY_SYMBOLS.get(currency.upper())
     if symbol:
         return f"{symbol}{formatted}"

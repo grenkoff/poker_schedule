@@ -4,10 +4,6 @@ Headline rule: the editor types `buy_in_without_rake` and `rake`; the
 third field, `buy_in_total`, is computed (`without + rake`) and rendered
 read-only. Any value the user manages to submit for `buy_in_total` is
 ignored server-side.
-
-Money fields are exposed as `DecimalField(max_digits=12, decimal_places=2)`
-so the editor sees and types whole-dollar amounts (e.g. `5.25`); we
-round-trip to cents at save-time so the model stays in integers.
 """
 
 from __future__ import annotations
@@ -129,18 +125,6 @@ class BlindStructureInlineForm(forms.ModelForm):
         return self.cleaned_data.get("ante") or 0
 
 
-def _to_cents(value: Decimal | None) -> int | None:
-    if value is None:
-        return None
-    return int((value * 100).to_integral_value())
-
-
-def _to_dollars(cents: int | None) -> Decimal | None:
-    if cents is None:
-        return None
-    return Decimal(cents) / Decimal(100)
-
-
 class TournamentAdminForm(forms.ModelForm):
     buy_in_without_rake = forms.DecimalField(
         label=_("Buy-in without rake, $"),
@@ -257,17 +241,12 @@ class TournamentAdminForm(forms.ModelForm):
         for name in ("min_players", "max_players"):
             if name in self.fields:
                 self.fields[name].widget.attrs["min"] = "2"
-        # Pre-fill the three Decimal fields from existing cents values
-        # when editing an existing tournament.
         if self.instance and self.instance.pk:
-            self.fields["buy_in_total"].initial = _to_dollars(self.instance.buy_in_total_cents)
-            self.fields["buy_in_without_rake"].initial = _to_dollars(
-                self.instance.buy_in_without_rake_cents
-            )
-            self.fields["rake"].initial = _to_dollars(self.instance.rake_cents)
-            total_cents = self.instance.buy_in_total_cents
-            if total_cents:
-                pct = Decimal(self.instance.rake_cents) * Decimal(100) / Decimal(total_cents)
+            self.fields["buy_in_total"].initial = self.instance.buy_in_total
+            self.fields["buy_in_without_rake"].initial = self.instance.buy_in_without_rake
+            self.fields["rake"].initial = self.instance.rake
+            if self.instance.buy_in_total:
+                pct = self.instance.rake * Decimal(100) / self.instance.buy_in_total
                 self.fields["rake_percent"].initial = f"{pct:.2f}"
 
         # Late-reg fields are conditionally required: the checkbox state
@@ -320,12 +299,10 @@ class TournamentAdminForm(forms.ModelForm):
         return cleaned
 
     def save(self, commit=True):
-        # Push the three cleaned Decimal values back into the model's cents
-        # columns before the underlying ModelForm.save() runs.
         instance = super().save(commit=False)
-        instance.buy_in_total_cents = _to_cents(self.cleaned_data["buy_in_total"])
-        instance.buy_in_without_rake_cents = _to_cents(self.cleaned_data["buy_in_without_rake"])
-        instance.rake_cents = _to_cents(self.cleaned_data["rake"])
+        instance.buy_in_total = self.cleaned_data["buy_in_total"]
+        instance.buy_in_without_rake = self.cleaned_data["buy_in_without_rake"]
+        instance.rake = self.cleaned_data["rake"]
         if commit:
             instance.save()
             self.save_m2m()

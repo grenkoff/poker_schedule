@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -39,7 +40,7 @@ def _make_tournament(
     *,
     name: str = "Test",
     game_type: str = GameType.NLHE,
-    buy_in_total_cents: int = 1100,
+    buy_in_total: Decimal = Decimal("11.00"),
     starting_time: datetime | None = None,
     **extras,
 ) -> Tournament:
@@ -48,9 +49,9 @@ def _make_tournament(
         "room": room,
         "name": name,
         "game_type": game_type,
-        "buy_in_total_cents": buy_in_total_cents,
-        "buy_in_without_rake_cents": int(buy_in_total_cents * 10 / 11),
-        "rake_cents": buy_in_total_cents - int(buy_in_total_cents * 10 / 11),
+        "buy_in_total": buy_in_total,
+        "buy_in_without_rake": (buy_in_total * Decimal(10) / Decimal(11)).quantize(Decimal("0.01")),
+        "rake": buy_in_total - (buy_in_total * Decimal(10) / Decimal(11)).quantize(Decimal("0.01")),
         "guaranteed_dollars": 10000,
         "payout_percent": 15,
         "starting_stack": 10000,
@@ -213,11 +214,11 @@ def test_shared_view_shows_owner_attribution(client: Client, pokerok: PokerRoom)
 @pytest.mark.django_db
 def test_shared_view_allows_sort_on_top_of_stored_filter(client: Client, pokerok: PokerRoom):
     now = datetime.now(UTC) + timedelta(hours=1)
-    _make_tournament(pokerok, name="Cheap", buy_in_total_cents=100, starting_time=now)
+    _make_tournament(pokerok, name="Cheap", buy_in_total=Decimal("1.00"), starting_time=now)
     _make_tournament(
         pokerok,
         name="Expensive",
-        buy_in_total_cents=10000,
+        buy_in_total=Decimal("100.00"),
         starting_time=now + timedelta(minutes=5),
     )
     shared = SharedFilter.objects.create(filter_params="game_type=NLHE")

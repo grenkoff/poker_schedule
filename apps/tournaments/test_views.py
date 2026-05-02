@@ -1,6 +1,7 @@
 """Tests for the public tournament-list view and money template filter."""
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 from django.test import Client
@@ -21,22 +22,22 @@ from apps.tournaments.templatetags.money import money
 
 
 def test_money_formats_usd_with_dollar_prefix():
-    assert money(1050, "USD") == "$10.50"
+    assert money(Decimal("10.50"), "USD") == "$10.50"
 
 
 def test_money_formats_known_symbols():
-    assert money(1000, "EUR") == "€10.00"
-    assert money(1000, "GBP") == "£10.00"
-    assert money(1000, "RUB") == "₽10.00"
-    assert money(1000, "JPY") == "¥10.00"
+    assert money(Decimal("10.00"), "EUR") == "€10.00"
+    assert money(Decimal("10.00"), "GBP") == "£10.00"
+    assert money(Decimal("10.00"), "RUB") == "₽10.00"
+    assert money(Decimal("10.00"), "JPY") == "¥10.00"
 
 
 def test_money_falls_back_to_iso_code_for_unknown_currency():
-    assert money(1250, "CAD") == "CAD 12.50"
+    assert money(Decimal("12.50"), "CAD") == "CAD 12.50"
 
 
 def test_money_uses_thousand_separator():
-    assert money(123456789, "USD") == "$1,234,567.89"
+    assert money(Decimal("1234567.89"), "USD") == "$1,234,567.89"
 
 
 def test_money_returns_empty_on_none():
@@ -44,7 +45,7 @@ def test_money_returns_empty_on_none():
 
 
 def test_money_is_case_insensitive_for_currency_code():
-    assert money(500, "usd") == "$5.00"
+    assert money(Decimal("5.00"), "usd") == "$5.00"
 
 
 # --- list view -------------------------------------------------------------
@@ -62,9 +63,9 @@ def _make_tournament(
         "room": room,
         "name": name,
         "game_type": GameType.NLHE,
-        "buy_in_total_cents": 1100,
-        "buy_in_without_rake_cents": 1000,
-        "rake_cents": 100,
+        "buy_in_total": Decimal("11.00"),
+        "buy_in_without_rake": Decimal("10.00"),
+        "rake": Decimal("1.00"),
         "guaranteed_dollars": 10000,
         "payout_percent": 15,
         "starting_stack": 10000,
@@ -156,9 +157,9 @@ def test_list_view_renders_buy_in(client: Client, pokerok: PokerRoom):
         pokerok,
         name="$25 Event",
         starting_time=soon,
-        buy_in_total_cents=2500,
-        buy_in_without_rake_cents=2300,
-        rake_cents=200,
+        buy_in_total=Decimal("25.00"),
+        buy_in_without_rake=Decimal("23.00"),
+        rake=Decimal("2.00"),
     )
     response = client.get("/en/")
     assert b"$25.00" in response.content
