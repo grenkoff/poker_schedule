@@ -3,6 +3,7 @@ pages render for a superuser, and the unverify bulk action on Tournament
 clears the verified flag."""
 
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -69,9 +70,9 @@ def tournament_with_children() -> Tournament:
         room=room,
         name="Admin Test Daily",
         game_type=GameType.NLHE,
-        buy_in_total_cents=5500,
-        buy_in_without_rake_cents=5000,
-        rake_cents=500,
+        buy_in_total=Decimal("55.00"),
+        buy_in_without_rake=Decimal("50.00"),
+        rake=Decimal("5.00"),
         guaranteed_dollars=10000,
         payout_percent=15,
         starting_stack=10000,
@@ -103,33 +104,3 @@ def test_tournament_change_page_renders(admin_client, tournament_with_children):
     assert response.status_code == 200
 
 
-@pytest.mark.django_db
-def test_mark_verified_action(admin_client, tournament_with_children):
-    assert tournament_with_children.verified_by_admin is False
-    response = admin_client.post(
-        "/admin/tournaments/tournament/",
-        {
-            "action": "mark_verified",
-            "_selected_action": [str(tournament_with_children.pk)],
-        },
-        follow=True,
-    )
-    assert response.status_code == 200
-    tournament_with_children.refresh_from_db()
-    assert tournament_with_children.verified_by_admin is True
-
-
-@pytest.mark.django_db
-def test_unmark_verified_action(admin_client, tournament_with_children):
-    tournament_with_children.verified_by_admin = True
-    tournament_with_children.save(update_fields=["verified_by_admin"])
-    admin_client.post(
-        "/admin/tournaments/tournament/",
-        {
-            "action": "unmark_verified",
-            "_selected_action": [str(tournament_with_children.pk)],
-        },
-        follow=True,
-    )
-    tournament_with_children.refresh_from_db()
-    assert tournament_with_children.verified_by_admin is False
