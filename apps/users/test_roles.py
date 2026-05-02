@@ -215,7 +215,6 @@ def test_admin_role_does_not_see_unverify_action(client: Client, pokerok: PokerR
     assert b"Return selected tournaments for editing" not in response.content
 
 
-
 @pytest.mark.django_db
 def test_verify_field_not_rendered_in_form(client: Client, pokerok: PokerRoom):
     """`verified_by_admin` is no longer a form field for any role —
@@ -283,7 +282,6 @@ def test_admin_cannot_edit_verified_tournament(client: Client, pokerok: PokerRoo
     # has_change_permission(obj) is False — there is no Save button.
     assert response.status_code == 200
     assert b'name="_save"' not in response.content
-
 
 
 @pytest.mark.django_db

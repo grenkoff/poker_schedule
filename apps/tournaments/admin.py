@@ -31,6 +31,7 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     class Media:
         js = ("admin/js/changelist_columns.js",)
         css = {"all": ("admin/css/changelist_columns.css",)}
+
     list_display = (
         "name_display",
         "room",

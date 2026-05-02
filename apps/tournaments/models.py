@@ -98,7 +98,9 @@ class Tournament(models.Model):
 
     # --- money (stored in dollars) --------------------------------------
     buy_in_total = models.DecimalField(_("buy-in (with rake), $"), max_digits=10, decimal_places=2)
-    buy_in_without_rake = models.DecimalField(_("buy-in (without rake), $"), max_digits=10, decimal_places=2)
+    buy_in_without_rake = models.DecimalField(
+        _("buy-in (without rake), $"), max_digits=10, decimal_places=2
+    )
     rake = models.DecimalField(_("rake, $"), max_digits=10, decimal_places=2)
     guaranteed_dollars = models.PositiveBigIntegerField(
         _("guaranteed prize pool, $"),
@@ -237,7 +239,6 @@ class Tournament(models.Model):
 
     def __str__(self) -> str:
         return f"{self.room.name} — {self.name}"
-
 
 
 class BlindStructure(models.Model):

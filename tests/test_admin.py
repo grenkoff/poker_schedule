@@ -102,5 +102,3 @@ def test_tournament_change_page_renders(admin_client, tournament_with_children):
     url = f"/admin/tournaments/tournament/{tournament_with_children.pk}/change/"
     response = admin_client.get(url)
     assert response.status_code == 200
-
-

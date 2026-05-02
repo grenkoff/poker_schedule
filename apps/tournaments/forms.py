@@ -125,7 +125,6 @@ class BlindStructureInlineForm(forms.ModelForm):
         return self.cleaned_data.get("ante") or 0
 
 
-
 class TournamentAdminForm(forms.ModelForm):
     buy_in_without_rake = forms.DecimalField(
         label=_("Buy-in without rake, $"),
