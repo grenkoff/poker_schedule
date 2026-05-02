@@ -2,6 +2,7 @@
 HTMX-aware template selection."""
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 from django.test import Client
@@ -39,9 +40,9 @@ def _make(
     *,
     name: str = "Test",
     game_type: str = GameType.NLHE,
-    buy_in_total_cents: int = 1100,
-    buy_in_without_rake_cents: int = 1000,
-    rake_cents: int = 100,
+    buy_in_total: Decimal = Decimal("11.00"),
+    buy_in_without_rake: Decimal = Decimal("10.00"),
+    rake: Decimal = Decimal("1.00"),
     starting_time: datetime | None = None,
     re_entry_name: str = "unlimited",
     early_bird: bool = False,
@@ -52,9 +53,9 @@ def _make(
         room=room,
         name=name,
         game_type=game_type,
-        buy_in_total_cents=buy_in_total_cents,
-        buy_in_without_rake_cents=buy_in_without_rake_cents,
-        rake_cents=rake_cents,
+        buy_in_total=buy_in_total,
+        buy_in_without_rake=buy_in_without_rake,
+        rake=rake,
         guaranteed_dollars=10000,
         payout_percent=15,
         starting_stack=10000,
@@ -118,27 +119,27 @@ def test_filter_by_game_type(pokerok: PokerRoom):
 
 @pytest.mark.django_db
 def test_filter_buy_in_min_in_dollars(pokerok: PokerRoom):
-    _make(pokerok, name="cheap", buy_in_total_cents=500)
-    _make(pokerok, name="mid", buy_in_total_cents=2200)
-    _make(pokerok, name="big", buy_in_total_cents=22000)
+    _make(pokerok, name="cheap", buy_in_total=Decimal("5.00"))
+    _make(pokerok, name="mid", buy_in_total=Decimal("22.00"))
+    _make(pokerok, name="big", buy_in_total=Decimal("220.00"))
     fs = TournamentFilter({"buy_in_min": 20}, queryset=Tournament.objects.all())
     assert set(fs.qs.values_list("name", flat=True)) == {"mid", "big"}
 
 
 @pytest.mark.django_db
 def test_filter_buy_in_max_in_dollars(pokerok: PokerRoom):
-    _make(pokerok, name="cheap", buy_in_total_cents=500)
-    _make(pokerok, name="mid", buy_in_total_cents=2200)
-    _make(pokerok, name="big", buy_in_total_cents=22000)
+    _make(pokerok, name="cheap", buy_in_total=Decimal("5.00"))
+    _make(pokerok, name="mid", buy_in_total=Decimal("22.00"))
+    _make(pokerok, name="big", buy_in_total=Decimal("220.00"))
     fs = TournamentFilter({"buy_in_max": 25}, queryset=Tournament.objects.all())
     assert set(fs.qs.values_list("name", flat=True)) == {"cheap", "mid"}
 
 
 @pytest.mark.django_db
 def test_filter_buy_in_range(pokerok: PokerRoom):
-    _make(pokerok, name="cheap", buy_in_total_cents=500)
-    _make(pokerok, name="mid", buy_in_total_cents=2200)
-    _make(pokerok, name="big", buy_in_total_cents=22000)
+    _make(pokerok, name="cheap", buy_in_total=Decimal("5.00"))
+    _make(pokerok, name="mid", buy_in_total=Decimal("22.00"))
+    _make(pokerok, name="big", buy_in_total=Decimal("220.00"))
     fs = TournamentFilter({"buy_in_min": 10, "buy_in_max": 100}, queryset=Tournament.objects.all())
     assert list(fs.qs.values_list("name", flat=True)) == ["mid"]
 
@@ -200,9 +201,9 @@ def test_toggle_value_transitions():
 
 @pytest.mark.django_db
 def test_apply_sort_ascending_and_descending(pokerok: PokerRoom):
-    _make(pokerok, name="cheap", buy_in_total_cents=100)
-    _make(pokerok, name="mid", buy_in_total_cents=500)
-    _make(pokerok, name="big", buy_in_total_cents=1000)
+    _make(pokerok, name="cheap", buy_in_total=Decimal("1.00"))
+    _make(pokerok, name="mid", buy_in_total=Decimal("5.00"))
+    _make(pokerok, name="big", buy_in_total=Decimal("10.00"))
     asc = list(apply_sort(Tournament.objects.all(), "buy_in").values_list("name", flat=True))
     desc = list(apply_sort(Tournament.objects.all(), "-buy_in").values_list("name", flat=True))
     assert asc == ["cheap", "mid", "big"]
@@ -242,13 +243,13 @@ def test_list_view_sort_param_reorders(client: Client, pokerok: PokerRoom):
     _make(
         pokerok,
         name="Cheap Event",
-        buy_in_total_cents=500,
+        buy_in_total=Decimal("5.00"),
         starting_time=base,
     )
     _make(
         pokerok,
         name="Expensive Event",
-        buy_in_total_cents=22000,
+        buy_in_total=Decimal("220.00"),
         starting_time=base + timedelta(minutes=1),
     )
     response = client.get("/en/?sort=-buy_in")

@@ -84,20 +84,16 @@ class TournamentFilter(django_filters.FilterSet):
         model = Tournament
         fields: list[str] = []  # every filter is declared explicitly above
 
-    @staticmethod
-    def _to_cents(value: Decimal | float | int) -> int:
-        return int(Decimal(value) * 100)
-
     def filter_buy_in_min(
         self, queryset: QuerySet[Tournament], _name: str, value: Any
     ) -> QuerySet[Tournament]:
         if value in (None, ""):
             return queryset
-        return queryset.filter(buy_in_total_cents__gte=self._to_cents(value))
+        return queryset.filter(buy_in_total__gte=value)
 
     def filter_buy_in_max(
         self, queryset: QuerySet[Tournament], _name: str, value: Any
     ) -> QuerySet[Tournament]:
         if value in (None, ""):
             return queryset
-        return queryset.filter(buy_in_total_cents__lte=self._to_cents(value))
+        return queryset.filter(buy_in_total__lte=value)

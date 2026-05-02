@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -173,9 +174,9 @@ def test_authenticated_user_timezone_is_applied_to_rendered_times(client: Client
         room=room,
         name="Evening Event",
         game_type=GameType.NLHE,
-        buy_in_total_cents=1100,
-        buy_in_without_rake_cents=1000,
-        rake_cents=100,
+        buy_in_total=Decimal("11.00"),
+        buy_in_without_rake=Decimal("10.00"),
+        rake=Decimal("1.00"),
         guaranteed_dollars=10000,
         payout_percent=15,
         starting_stack=10000,
@@ -215,9 +216,9 @@ def test_anonymous_user_sees_utc(client: Client):
         room=room,
         name="UTC Event",
         game_type=GameType.NLHE,
-        buy_in_total_cents=1100,
-        buy_in_without_rake_cents=1000,
-        rake_cents=100,
+        buy_in_total=Decimal("11.00"),
+        buy_in_without_rake=Decimal("10.00"),
+        rake=Decimal("1.00"),
         guaranteed_dollars=10000,
         payout_percent=15,
         starting_stack=10000,

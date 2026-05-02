@@ -8,7 +8,7 @@ from apps.rooms.models import PokerRoom
 
 
 class GameType(models.TextChoices):
-    NLHE = "NLHE", _("No-Limit Hold'em")
+    NLHE = "NLHE", "NL Holdem"
     PLO = "PLO", _("Pot-Limit Omaha")
     PLO5 = "PLO5", _("5-card PLO")
     PLO8 = "PLO8", _("Omaha Hi/Lo (8-or-better)")
@@ -78,7 +78,7 @@ class Periodicity(_OptionBase):
 class Tournament(models.Model):
     """Manually-entered poker tournament.
 
-    Buy-in is decomposed into three integer-cents fields: `buy_in_total`,
+    Buy-in is decomposed into three decimal-dollar fields: `buy_in_total`,
     `buy_in_without_rake`, and `rake`. The admin form lets the editor
     enter any two; the third is auto-derived. All three are stored.
     """
@@ -98,18 +98,18 @@ class Tournament(models.Model):
         default=GameType.NLHE,
     )
 
-    # --- money (all in minor units / cents) -----------------------------
-    buy_in_total_cents = models.PositiveBigIntegerField(_("buy-in (with rake), cents"))
-    buy_in_without_rake_cents = models.PositiveBigIntegerField(_("buy-in (without rake), cents"))
-    rake_cents = models.PositiveBigIntegerField(_("rake, cents"))
+    # --- money (stored in dollars) --------------------------------------
+    buy_in_total = models.DecimalField(_("buy-in (with rake), $"), max_digits=10, decimal_places=2)
+    buy_in_without_rake = models.DecimalField(_("buy-in (without rake), $"), max_digits=10, decimal_places=2)
+    rake = models.DecimalField(_("rake, $"), max_digits=10, decimal_places=2)
     guaranteed_dollars = models.PositiveBigIntegerField(
-        _("guaranteed prize pool ($)"),
+        _("guaranteed prize pool, $"),
         help_text=_(
             "Whole dollars. Stored separately from buy-ins because GTDs are always quoted in round numbers."
         ),
     )
     payout_percent = models.PositiveSmallIntegerField(
-        _("payout distribution (%)"),
+        _("payout distribution, %"),
         validators=[MinValueValidator(1), MaxValueValidator(100)],
         help_text=_("Percentage of the field that gets paid."),
     )
@@ -121,7 +121,7 @@ class Tournament(models.Model):
         validators=[MinValueValidator(1)],
     )
     starting_stack_bb = models.PositiveIntegerField(
-        _("starting chips (BB)"),
+        _("starting chips, BB"),
         default=100,
         validators=[MinValueValidator(1)],
     )
@@ -148,12 +148,12 @@ class Tournament(models.Model):
         validators=[MinValueValidator(1)],
     )
     blind_interval_minutes = models.PositiveSmallIntegerField(
-        _("blind interval (minutes)"),
+        _("blind interval, min"),
         default=1,
         validators=[MinValueValidator(1)],
     )
     break_minutes = models.PositiveSmallIntegerField(
-        _("break time (minutes)"),
+        _("break time, min"),
         default=5,
         validators=[MinValueValidator(1)],
     )
@@ -234,23 +234,12 @@ class Tournament(models.Model):
         indexes = [
             models.Index(fields=("starting_time",)),
             models.Index(fields=("room", "starting_time")),
-            models.Index(fields=("buy_in_total_cents",)),
+            models.Index(fields=("buy_in_total",)),
         ]
 
     def __str__(self) -> str:
         return f"{self.room.name} — {self.name}"
 
-    @property
-    def buy_in_total(self) -> Decimal:
-        return Decimal(self.buy_in_total_cents) / Decimal(100)
-
-    @property
-    def buy_in_without_rake(self) -> Decimal:
-        return Decimal(self.buy_in_without_rake_cents) / Decimal(100)
-
-    @property
-    def rake(self) -> Decimal:
-        return Decimal(self.rake_cents) / Decimal(100)
 
 
 class BlindStructure(models.Model):
