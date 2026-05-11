@@ -7,6 +7,11 @@
       hx-indicator="#filter-loading">
 
     <div class="filter-grid">
+        <div class="filter-field filter-field--q">
+            <label for="id_q">{% trans "Search" %}</label>
+            <input type="search" id="id_q" name="q" value="{{ search_query|default_if_none:'' }}"
+                   placeholder="{% trans 'Name or room' %}">
+        </div>
         {% for field in filterset.form.visible_fields %}
             <div class="filter-field filter-field--{{ field.name }}">
                 <label for="{{ field.id_for_label }}">{{ field.label }}</label>

@@ -1,7 +1,13 @@
 {% extends "base.html" %}
 {% load i18n %}
+{% load static %}
 
 {% block title %}{% trans "Shared tournament list" %} — {% trans "Poker Schedule" %}{% endblock %}
+
+{% block extra_head %}
+    <link rel="stylesheet" href="{% static 'css/public_columns.css' %}">
+    <script src="{% static 'js/public_columns.js' %}" defer></script>
+{% endblock %}
 
 {% block content %}
 <h1>{% trans "Shared tournament list" %}</h1>

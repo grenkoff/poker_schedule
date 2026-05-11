@@ -1,6 +1,7 @@
 """Public-facing views over Tournament."""
 
 from django.core.paginator import Paginator
+from django.db.models import Q
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.utils import timezone
@@ -14,6 +15,7 @@ from apps.filters.sort import (
     toggle_value,
 )
 
+from .columns import PUBLIC_COLUMNS
 from .models import Tournament
 
 PAGE_SIZE = 50
@@ -29,7 +31,10 @@ def tournament_list(request: HttpRequest) -> HttpResponse:
     qs = Tournament.objects.filter(
         starting_time__gte=timezone.now(),
         verified_by_admin=True,
-    ).select_related("room", "room__network")
+    ).select_related("room", "room__network", "re_entry")
+    q = (request.GET.get("q") or "").strip()
+    if q:
+        qs = qs.filter(Q(name__icontains=q) | Q(room__name__icontains=q))
     filterset = TournamentFilter(request.GET or None, queryset=qs)
     filtered = apply_sort(filterset.qs, request.GET.get("sort"))
 
@@ -48,6 +53,8 @@ def tournament_list(request: HttpRequest) -> HttpResponse:
         "current_sort_desc": current_desc,
         "sort_links": sort_links,
         "has_filters_applied": bool(request.GET.dict()),
+        "columns": PUBLIC_COLUMNS,
+        "search_query": q,
     }
 
     is_htmx = request.headers.get("HX-Request") == "true"

@@ -1,80 +1,38 @@
 {% load i18n %}
-{% load money %}
+{% load tournament_columns %}
 
 {% if tournaments %}
-<table>
+<div class="public-changelist">
+<table class="public-changelist-table" data-public-columns>
     <thead>
     <tr>
+        {% for col in columns %}
         <th>
-            <a href="?{% querystring sort=sort_links.room page=None %}"
-               hx-get="?{% querystring sort=sort_links.room page=None %}"
+            {% if col.sort_key %}
+            <a href="?{% querystring sort=sort_links|dictlookup:col.sort_key page=None %}"
+               hx-get="?{% querystring sort=sort_links|dictlookup:col.sort_key page=None %}"
                hx-target="#tournament-table"
                hx-push-url="true">
-                {% trans "Room" %}{% if current_sort_key == 'room' %}{% if current_sort_desc %} ↓{% else %} ↑{% endif %}{% endif %}
+                {{ col.label }}{% if current_sort_key == col.sort_key %}{% if current_sort_desc %} ▼{% else %} ▲{% endif %}{% endif %}
             </a>
+            {% else %}
+                {{ col.label }}
+            {% endif %}
         </th>
-        <th>
-            <a href="?{% querystring sort=sort_links.name page=None %}"
-               hx-get="?{% querystring sort=sort_links.name page=None %}"
-               hx-target="#tournament-table"
-               hx-push-url="true">
-                {% trans "Name" %}{% if current_sort_key == 'name' %}{% if current_sort_desc %} ↓{% else %} ↑{% endif %}{% endif %}
-            </a>
-        </th>
-        <th>{% trans "Game" %}</th>
-        <th>
-            <a href="?{% querystring sort=sort_links.buy_in page=None %}"
-               hx-get="?{% querystring sort=sort_links.buy_in page=None %}"
-               hx-target="#tournament-table"
-               hx-push-url="true">
-                {% trans "Buy-in" %}{% if current_sort_key == 'buy_in' %}{% if current_sort_desc %} ↓{% else %} ↑{% endif %}{% endif %}
-            </a>
-        </th>
-        <th>
-            <a href="?{% querystring sort=sort_links.guaranteed page=None %}"
-               hx-get="?{% querystring sort=sort_links.guaranteed page=None %}"
-               hx-target="#tournament-table"
-               hx-push-url="true">
-                {% trans "GTD" %}{% if current_sort_key == 'guaranteed' %}{% if current_sort_desc %} ↓{% else %} ↑{% endif %}{% endif %}
-            </a>
-        </th>
-        <th>
-            <a href="?{% querystring sort=sort_links.starting_time page=None %}"
-               hx-get="?{% querystring sort=sort_links.starting_time page=None %}"
-               hx-target="#tournament-table"
-               hx-push-url="true">
-                {% trans "Start" %}{% if current_sort_key == 'starting_time' %}{% if current_sort_desc %} ↓{% else %} ↑{% endif %}{% endif %}
-            </a>
-        </th>
-        <th>{% trans "Late reg" %}</th>
-        <th>{% trans "Re-entry" %}</th>
-        <th>{% trans "FT" %}</th>
+        {% endfor %}
     </tr>
     </thead>
     <tbody>
     {% for t in tournaments %}
     <tr>
-        <td>{{ t.room.name }}</td>
-        <td>
-            {{ t.name }}
-            {% if t.featured_final_table %}<span class="tag" title="{% trans 'Featured final table' %}">★ FT</span>{% endif %}
-            {% if t.early_bird %}<span class="tag" title="{% trans 'Early bird' %}">EB</span>{% endif %}
-        </td>
-        <td><span class="tag">{{ t.get_game_type_display }}</span></td>
-        <td class="buy-in">
-            {{ t.buy_in_total|money:"USD" }}{% if t.rake %}
-                <span class="muted">({{ t.buy_in_without_rake|money:"USD" }} + {{ t.rake|money:"USD" }})</span>
-            {% endif %}
-        </td>
-        <td>${{ t.guaranteed_dollars }}</td>
-        <td>{{ t.starting_time|date:"Y-m-d H:i" }} <span class="muted">{{ t.starting_time|date:"T" }}</span></td>
-        <td>{{ t.late_reg_at|date:"H:i" }} <span class="muted">L{{ t.late_reg_level }}</span></td>
-        <td>{{ t.re_entry.label }}</td>
-        <td>{{ t.players_at_final_table }}</td>
+        {% for col in columns %}
+        <td>{% render_column t col %}</td>
+        {% endfor %}
     </tr>
     {% endfor %}
     </tbody>
 </table>
+</div>
 
 {% if page_obj.has_other_pages %}
 <nav class="pagination">
