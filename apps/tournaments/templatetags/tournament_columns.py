@@ -2,7 +2,7 @@
 
 from django import template
 
-from apps.tournaments.columns import Column, render_cell
+from apps.tournaments.columns import Column
 from apps.tournaments.models import Tournament
 
 register = template.Library()
@@ -10,7 +10,7 @@ register = template.Library()
 
 @register.simple_tag
 def render_column(tournament: Tournament, column: Column) -> str:
-    return render_cell(tournament, column.key)
+    return column.formatter(tournament)
 
 
 @register.filter
