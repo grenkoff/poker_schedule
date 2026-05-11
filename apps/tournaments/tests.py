@@ -16,7 +16,11 @@ from apps.tournaments.models import (
     ReEntryOption,
     Tournament,
 )
-from apps.tournaments.recurrence import regenerate_series
+from apps.tournaments.recurrence import (
+    HORIZON_DAYS,
+    extend_series_to_horizon,
+    regenerate_series,
+)
 
 
 @pytest.fixture
@@ -301,3 +305,93 @@ def test_regenerate_series_skipped_for_child(pokerok):
     # Calling on a child must be a no-op (no grandchildren).
     regenerate_series(child)
     assert Tournament.objects.filter(series_master=child).count() == 0
+
+
+@pytest.mark.django_db
+def test_extend_series_no_op_for_one_off(pokerok):
+    master = _make_tournament(pokerok)
+    assert extend_series_to_horizon(master) == 0
+    assert Tournament.objects.filter(series_master=master).count() == 0
+
+
+@pytest.mark.django_db
+def test_extend_series_is_idempotent(pokerok):
+    daily = Periodicity.objects.get(name="every_24_hours")
+    now = datetime(2026, 5, 11, 12, 0, tzinfo=UTC)
+    master = _make_tournament(
+        pokerok,
+        periodicity=daily,
+        starting_time=now - timedelta(hours=1),
+        late_reg_at=now - timedelta(minutes=30),
+    )
+    regenerate_series(master)
+    extend_series_to_horizon(master, now=now)
+    first_count = Tournament.objects.filter(series_master=master).count()
+    assert extend_series_to_horizon(master, now=now) == 0
+    assert Tournament.objects.filter(series_master=master).count() == first_count
+
+
+@pytest.mark.django_db
+def test_extend_series_skipped_for_child(pokerok):
+    daily = Periodicity.objects.get(name="every_24_hours")
+    master = _make_tournament(pokerok, periodicity=daily)
+    regenerate_series(master)
+    child = Tournament.objects.filter(series_master=master).first()
+    assert extend_series_to_horizon(child) == 0
+
+
+@pytest.mark.django_db
+def test_extend_series_rolls_horizon_forward_for_old_master(pokerok):
+    daily = Periodicity.objects.get(name="every_24_hours")
+    now = datetime(2026, 5, 11, 12, 0, tzinfo=UTC)
+    master_start = now - timedelta(days=60)
+    master = _make_tournament(
+        pokerok,
+        periodicity=daily,
+        starting_time=master_start,
+        late_reg_at=master_start + timedelta(hours=1),
+    )
+    BlindStructure.objects.create(tournament=master, level=1, small_blind=10, big_blind=20)
+    regenerate_series(master)
+    # Initial children all sit in the past (within master_start + 30d).
+    initial_children = Tournament.objects.filter(series_master=master).order_by("starting_time")
+    assert initial_children.count() == HORIZON_DAYS
+    assert all(c.starting_time < now for c in initial_children)
+
+    created = extend_series_to_horizon(master, now=now)
+    horizon_end = now + timedelta(days=HORIZON_DAYS)
+
+    children = Tournament.objects.filter(series_master=master).order_by("starting_time")
+    # Old children are not deleted by the lazy extender.
+    assert children.count() == initial_children.count() + created
+    future = [c for c in children if c.starting_time > now]
+    assert future, "extender should have produced future occurrences"
+    assert all(c.starting_time <= horizon_end for c in future)
+    # First future occurrence sits within one period of `now`.
+    first_future = future[0]
+    assert now - timedelta(days=1) < first_future.starting_time <= now + timedelta(days=1)
+    # Blind levels are duplicated to every newly created child.
+    for child in future:
+        assert child.blind_levels.count() == 1
+
+
+@pytest.mark.django_db
+def test_extend_series_creates_initial_children_when_master_has_none(pokerok):
+    daily = Periodicity.objects.get(name="every_24_hours")
+    now = datetime(2026, 5, 11, 12, 0, tzinfo=UTC)
+    master = _make_tournament(
+        pokerok,
+        periodicity=daily,
+        starting_time=now + timedelta(hours=1),
+        late_reg_at=now + timedelta(hours=2),
+    )
+    # No regenerate_series call: simulate a master with no materialized children.
+    assert Tournament.objects.filter(series_master=master).count() == 0
+    created = extend_series_to_horizon(master, now=now)
+    # Master starts at now+1h, daily cadence: occurrences at +1d+1h, +2d+1h, ...
+    # The last one fitting in (now, now+30d] is +29d+1h → 29 children.
+    assert created == HORIZON_DAYS - 1
+    assert Tournament.objects.filter(series_master=master).count() == HORIZON_DAYS - 1
+    horizon_end = now + timedelta(days=HORIZON_DAYS)
+    for child in Tournament.objects.filter(series_master=master):
+        assert now < child.starting_time <= horizon_end
