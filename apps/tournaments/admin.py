@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.http import HttpResponseRedirect
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from apps.users.admin_mixins import StaffAdminMixin
@@ -13,7 +14,7 @@ from .models import (
     ReEntryOption,
     Tournament,
 )
-from .recurrence import regenerate_series
+from .recurrence import extend_series_to_horizon, regenerate_series
 
 
 class BlindStructureInline(admin.TabularInline):
@@ -116,6 +117,23 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
 
     def get_readonly_fields(self, request, obj=None):
         return ("series_master",)
+
+    def get_queryset(self, request):
+        self._extend_recurring_series()
+        qs = super().get_queryset(request)
+        return qs.filter(late_reg_at__gte=timezone.now())
+
+    def _extend_recurring_series(self) -> None:
+        masters = (
+            Tournament.objects.filter(
+                series_master__isnull=True,
+                periodicity__interval_seconds__gt=0,
+            )
+            .select_related("periodicity")
+            .prefetch_related("blind_levels")
+        )
+        for master in masters:
+            extend_series_to_horizon(master)
 
     def has_change_permission(self, request, obj=None) -> bool:
         if not super().has_change_permission(request, obj):
