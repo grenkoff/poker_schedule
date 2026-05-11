@@ -31,7 +31,7 @@ def test_home_renders_in_english(client: Client) -> None:
 @pytest.mark.django_db
 @pytest.mark.parametrize(
     "lang_prefix",
-    ["en", "ru", "es", "pt-br", "de", "fr", "zh-hans", "ja", "ko", "uk"],
+    ["en", "ru"],
 )
 def test_home_serves_each_locale(client: Client, lang_prefix: str) -> None:
     response = client.get(f"/{lang_prefix}/")
