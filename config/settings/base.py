@@ -128,8 +128,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # --- i18n ---------------------------------------------------------------
 # English is the source language; every user-facing string in code is
-# English and translated via gettext. The project ships with scaffolding
-# for 10 locales; translations are filled in incrementally.
+# English and translated via gettext.
 
 LANGUAGE_CODE = "en"
 TIME_ZONE = "UTC"
@@ -139,14 +138,6 @@ USE_TZ = True
 LANGUAGES = [
     ("en", "English"),
     ("ru", "Русский"),
-    ("es", "Español"),
-    ("pt-br", "Português (Brasil)"),
-    ("de", "Deutsch"),
-    ("fr", "Français"),
-    ("zh-hans", "简体中文"),
-    ("ja", "日本語"),
-    ("ko", "한국어"),
-    ("uk", "Українська"),
 ]
 
 LOCALE_PATHS = [BASE_DIR / "locale"]

@@ -10,14 +10,6 @@ from django.utils.translation import gettext_lazy as _
 LANGUAGE_CHOICES = [
     ("en", "English"),
     ("ru", "Русский"),
-    ("es", "Español"),
-    ("pt-br", "Português (Brasil)"),
-    ("de", "Deutsch"),
-    ("fr", "Français"),
-    ("zh-hans", "简体中文"),
-    ("ja", "日本語"),
-    ("ko", "한국어"),
-    ("uk", "Українська"),
 ]
 
 

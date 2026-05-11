@@ -9,7 +9,7 @@ shareable, exportable list. Django + PostgreSQL, hosted on Railway.
 - Python 3.12 + Django 5.1
 - PostgreSQL (production) / SQLite (local default)
 - uv for dependency management
-- Internationalized for 10 locales (en, ru, es, pt-br, de, fr, zh-hans, ja, ko, uk)
+- Internationalized (en, ru)
 - Whitenoise for static files
 - Deployed on Railway; CI via GitHub Actions
 
@@ -163,6 +163,6 @@ apps/
   exports/      # PDF export
   analytics/    # historical averages
 templates/      # Django templates (base + home)
-locale/         # .po/.mo translation files (10 languages)
+locale/         # .po/.mo translation files (en, ru)
 tests/          # project-wide tests
 ```
