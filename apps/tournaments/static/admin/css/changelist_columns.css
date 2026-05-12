@@ -26,6 +26,11 @@
     top: 0;
     z-index: 2;
     background: var(--darkened-bg, #f8f8f8);
+    /* Each word in the header on its own line, anchored to the top — keeps
+     * columns narrow regardless of how long the label is. */
+    white-space: normal;
+    word-spacing: 100vw;
+    vertical-align: top;
 }
 
 /* Taller horizontal scrollbar for easier grabbing on a wide table. */

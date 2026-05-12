@@ -15,6 +15,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from django.utils.functional import Promise
+from django.utils.html import format_html
+from django.utils.safestring import SafeString
 from django.utils.timezone import localtime
 from django.utils.translation import gettext_lazy as _
 
@@ -36,8 +38,11 @@ def _yesno(value: bool) -> str:
     return "✓" if value else "—"
 
 
-def _fmt_dt(value):
-    return localtime(value).strftime("%d.%m.%Y %H:%M %Z") if value else "—"
+def _fmt_dt(value) -> str | SafeString:
+    if not value:
+        return "—"
+    fallback = localtime(value).strftime("%d.%m.%Y %H:%M %Z")
+    return format_html('<time datetime="{}" data-local-dt>{}</time>', value.isoformat(), fallback)
 
 
 def _fmt_money(value):
@@ -203,7 +208,7 @@ ALL_COLUMNS: tuple[Column, ...] = (
     ),
     Column(
         "featured_final_table",
-        _("Featured FT"),
+        _("Featured final table"),
         lambda t: _yesno(t.featured_final_table),
         sort_key="featured_final_table",
         db_field="featured_final_table",

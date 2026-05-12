@@ -33,6 +33,11 @@
     font-weight: 600;
     color: #555;
     letter-spacing: 0.04em;
+    /* Each word in the header on its own line, anchored to the top — keeps
+     * columns narrow regardless of how long the label is. */
+    white-space: normal;
+    word-spacing: 100vw;
+    vertical-align: top;
 }
 
 .public-changelist-table thead th a {

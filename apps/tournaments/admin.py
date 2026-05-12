@@ -46,7 +46,7 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     form = TournamentAdminForm
 
     class Media:
-        js = ("admin/js/changelist_columns.js",)
+        js = ("admin/js/changelist_columns.js", "js/localize_times.js")
         css = {"all": ("admin/css/changelist_columns.css",)}
 
     list_display = tuple(f"col_{c.key}" for c in ALL_COLUMNS)
