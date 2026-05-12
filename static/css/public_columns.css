@@ -8,8 +8,8 @@
 }
 
 .public-changelist-table {
+    width: 100%;
     min-width: max-content;
-    width: auto;
     border-collapse: separate !important;
     border-spacing: 0;
     font-size: 0.9rem;
@@ -33,6 +33,10 @@
     font-weight: 600;
     color: #555;
     letter-spacing: 0.04em;
+    /* Header text gets <br> between words server-side — keep it
+     * top-aligned so multi-line headers don't push body cells down. */
+    vertical-align: top;
+    white-space: normal;
 }
 
 .public-changelist-table thead th a {
@@ -41,6 +45,21 @@
 }
 .public-changelist-table thead th a:hover {
     color: #1a1a1a;
+}
+.public-changelist-table thead th .tz-anno {
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: normal;
+    color: #888;
+}
+.public-changelist-table thead th select.tz-picker {
+    margin-top: 4px;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: 0.75rem;
+    padding: 2px 4px;
+    max-width: 140px;
 }
 
 /* Taller horizontal scrollbar for easier grabbing on a wide table. */

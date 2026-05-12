@@ -7,16 +7,16 @@
     <thead>
     <tr>
         {% for col in columns %}
-        <th>
+        <th data-col-label="{{ col.label }}"{% if col.tz_aware %} data-tz-col{% endif %}{% if col.tz_picker %} data-tz-picker{% endif %}>
             {% if col.sort_key %}
             <a href="?{% querystring sort=sort_links|dictlookup:col.sort_key page=None %}"
                hx-get="?{% querystring sort=sort_links|dictlookup:col.sort_key page=None %}"
                hx-target="#tournament-table"
                hx-push-url="true">
-                {{ col.label }}{% if current_sort_key == col.sort_key %}{% if current_sort_desc %} ▼{% else %} ▲{% endif %}{% endif %}
+                {{ col.label|wordwrap:1|linebreaksbr }}{% if current_sort_key == col.sort_key %}{% if current_sort_desc %} ▼{% else %} ▲{% endif %}{% endif %}
             </a>
             {% else %}
-                {{ col.label }}
+                {{ col.label|wordwrap:1|linebreaksbr }}
             {% endif %}
         </th>
         {% endfor %}

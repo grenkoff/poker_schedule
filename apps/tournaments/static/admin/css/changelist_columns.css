@@ -26,6 +26,10 @@
     top: 0;
     z-index: 2;
     background: var(--darkened-bg, #f8f8f8);
+    /* Header text gets <br> between words server-side — keep it
+     * top-aligned so multi-line headers don't push body cells down. */
+    vertical-align: top;
+    white-space: normal;
 }
 
 /* Taller horizontal scrollbar for easier grabbing on a wide table. */
@@ -149,6 +153,14 @@
 /* Hide column cells/headers flagged off via JS. */
 #result_list .tnmt-col-hidden {
     display: none !important;
+}
+
+/* Browser-local TZ label appended to date column headers. */
+#result_list thead th .tz-anno {
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: normal;
+    color: #888;
 }
 
 /* Drag-and-drop rows in the modal list. */

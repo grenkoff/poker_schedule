@@ -25,8 +25,19 @@
     }
 
     function columnLabel(th) {
-        return (th.textContent || "").replace(/\s+/g, " ").trim()
-            .replace(/\s*[▲▼]$/, "").trim();
+        if (th.dataset && th.dataset.colLabel) return th.dataset.colLabel;
+        // Walk children, treating <br> as a space so "Starting<br>time" → "Starting time".
+        var parts = [];
+        function walk(node) {
+            if (node.nodeType === 3) {
+                parts.push(node.textContent);
+            } else if (node.nodeType === 1) {
+                if (node.tagName === "BR") parts.push(" ");
+                else node.childNodes.forEach(walk);
+            }
+        }
+        walk(th);
+        return parts.join("").replace(/\s+/g, " ").trim().replace(/\s*[▲▼]$/, "").trim();
     }
 
     function allLabels(table) {
