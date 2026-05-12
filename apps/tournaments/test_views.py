@@ -160,12 +160,16 @@ def test_list_view_renders_buy_in(client: Client, pokerok: PokerRoom):
         pokerok,
         name="$25 Event",
         starting_time=soon,
-        buy_in_total=Decimal("25.00"),
+        buy_in_total=Decimal("25.50"),
         buy_in_without_rake=Decimal("23.00"),
-        rake=Decimal("2.00"),
+        rake=Decimal("2.50"),
     )
     response = client.get("/en/")
-    assert b"25.00" in response.content
+    # Decimal value: dollar prefix + 2 decimals.
+    assert b"$25.50" in response.content
+    # Whole-dollar value: prefix only, no trailing ".00".
+    assert b"$23" in response.content
+    assert b"23.00" not in response.content
 
 
 @pytest.mark.django_db
