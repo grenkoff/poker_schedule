@@ -163,6 +163,7 @@ ALL_COLUMNS: tuple[Column, ...] = (
         sort_key="late_reg_at",
         db_field="late_reg_at",
         tz_aware=True,
+        tz_picker=True,
     ),
     Column(
         "late_registration_duration",
