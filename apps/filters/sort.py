@@ -3,23 +3,21 @@
 The `sort` GET param is untrusted input, so we map user-facing keys to
 real DB columns and silently fall back to the default on anything
 unknown. A leading `-` flips direction.
+
+The whitelist is derived from `apps.tournaments.columns.ALL_COLUMNS`,
+keeping the column registry as the single source of truth — no need to
+remember to update both places when a sortable column is added.
 """
 
 from __future__ import annotations
 
 from django.db.models import QuerySet
 
+from apps.tournaments.columns import ALL_COLUMNS
 from apps.tournaments.models import Tournament
 
-# Key → DB column. Keys are short and stable so shareable URLs survive
-# internal refactors.
 SORT_FIELDS: dict[str, str] = {
-    "starting_time": "starting_time",
-    "buy_in": "buy_in_total",
-    "guaranteed": "guaranteed_dollars",
-    "blind_interval": "blind_interval_minutes",
-    "room": "room__name",
-    "name": "name",
+    c.sort_key: c.db_field for c in ALL_COLUMNS if c.sort_key is not None and c.db_field is not None
 }
 
 DEFAULT_SORT = "starting_time"

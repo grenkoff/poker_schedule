@@ -1,3 +1,5 @@
+from typing import cast
+
 from django.contrib import admin
 from django.http import HttpResponseRedirect
 from django.utils import timezone
@@ -5,6 +7,7 @@ from django.utils.translation import gettext_lazy as _
 
 from apps.users.admin_mixins import StaffAdminMixin
 
+from .columns import ALL_COLUMNS, Column
 from .forms import BlindStructureInlineForm, TournamentAdminForm
 from .models import (
     BlindStructure,
@@ -15,6 +18,19 @@ from .models import (
     Tournament,
 )
 from .recurrence import extend_series_to_horizon, regenerate_series
+
+
+def _make_display(column: Column):
+    """Wrap a column formatter as an admin display method."""
+
+    def _display(self, obj):
+        return column.formatter(obj)
+
+    _display.__name__ = f"col_{column.key}"
+    return admin.display(
+        description=cast("str", column.label),
+        ordering=column.db_field,
+    )(_display)
 
 
 class BlindStructureInline(admin.TabularInline):
@@ -33,33 +49,7 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         js = ("admin/js/changelist_columns.js",)
         css = {"all": ("admin/css/changelist_columns.css",)}
 
-    list_display = (
-        "name_display",
-        "room",
-        "game_type",
-        "buy_in_dollars",
-        "buy_in_without_rake_display",
-        "rake_display",
-        "rake_percent_display",
-        "guaranteed_dollars",
-        "payout_percent",
-        "starting_stack",
-        "starting_stack_bb",
-        "starting_time_fmt",
-        "late_registration_available",
-        "late_reg_at_fmt",
-        "late_registration_duration",
-        "late_reg_level",
-        "blind_interval_minutes",
-        "players_per_table",
-        "players_at_final_table",
-        "min_players",
-        "max_players",
-        "re_entry",
-        "early_bird",
-        "featured_final_table",
-        "verified_by_admin",
-    )
+    list_display = tuple(f"col_{c.key}" for c in ALL_COLUMNS)
     list_select_related = ("room", "re_entry")
     list_per_page = 100
     list_filter = ()
@@ -179,43 +169,6 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
                 extra_context["show_verified_lock_banner"] = True
         return super().change_view(request, object_id, form_url, extra_context)
 
-    @admin.display(description="Buy-in without rake, $", ordering="buy_in_without_rake")
-    def buy_in_without_rake_display(self, obj):
-        return f"{obj.buy_in_without_rake:.2f}"
-
-    @admin.display(description="Rake, $", ordering="rake")
-    def rake_display(self, obj):
-        return f"{obj.rake:.2f}"
-
-    @admin.display(description="Rake %")
-    def rake_percent_display(self, obj):
-        if obj.buy_in_total:
-            return f"{obj.rake / obj.buy_in_total * 100:.2f}"
-        return "—"
-
-    @admin.display(description="Starting time", ordering="starting_time")
-    def starting_time_fmt(self, obj):
-        return obj.starting_time.strftime("%d.%m.%Y %H:%M") if obj.starting_time else "—"
-
-    @admin.display(description="Late registration closes at", ordering="late_reg_at")
-    def late_reg_at_fmt(self, obj):
-        return obj.late_reg_at.strftime("%d.%m.%Y %H:%M") if obj.late_reg_at else "—"
-
-    @admin.display(description="Buy-in with rake, $", ordering="buy_in_total")
-    def buy_in_dollars(self, obj):
-        return f"{obj.buy_in_total:.2f}"
-
-    @admin.display(description="Name", ordering="name")
-    def name_display(self, obj):
-        return obj.name
-
-    @admin.display(description=_("Late registration duration"))
-    def late_registration_duration(self, obj):
-        if obj.late_reg_at and obj.starting_time:
-            minutes = int((obj.late_reg_at - obj.starting_time).total_seconds() // 60)
-            return f"{minutes} min"
-        return "—"
-
     def get_actions(self, request):
         return {}
 
@@ -228,6 +181,11 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     def unmark_verified(self, request, queryset):
         updated = queryset.update(verified_by_admin=False)
         self.message_user(request, _("%d tournament(s) returned for editing.") % updated)
+
+
+# Synthesize one display method per column from the shared registry.
+for _col in ALL_COLUMNS:
+    setattr(TournamentAdmin, f"col_{_col.key}", _make_display(_col))
 
 
 # --- Option lookup tables -------------------------------------------------

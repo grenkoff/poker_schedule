@@ -17,6 +17,7 @@ from apps.filters.sort import (
     parse_sort,
     toggle_value,
 )
+from apps.tournaments.columns import PUBLIC_COLUMNS
 from apps.tournaments.models import Tournament
 
 PAGE_SIZE = 50
@@ -66,7 +67,7 @@ def shared_view(request: HttpRequest, slug: str) -> HttpResponse:
             merged[key] = value
 
     qs = Tournament.objects.filter(starting_time__gte=timezone.now()).select_related(
-        "room", "room__network"
+        "room", "room__network", "re_entry"
     )
     filterset = TournamentFilter(merged, queryset=qs)
     filtered = apply_sort(filterset.qs, merged.get("sort"))
@@ -87,6 +88,8 @@ def shared_view(request: HttpRequest, slug: str) -> HttpResponse:
         "current_sort_desc": current_desc,
         "sort_links": {key: toggle_value(sort_value, key) for key in SORT_FIELDS},
         "has_filters_applied": True,
+        "columns": PUBLIC_COLUMNS,
+        "search_query": "",
     }
 
     is_htmx = request.headers.get("HX-Request") == "true"
