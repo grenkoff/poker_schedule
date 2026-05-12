@@ -1,8 +1,8 @@
-from typing import cast
-
 from django.contrib import admin
 from django.http import HttpResponseRedirect
 from django.utils import timezone
+from django.utils.html import escape
+from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
 from apps.users.admin_mixins import StaffAdminMixin
@@ -20,6 +20,17 @@ from .models import (
 from .recurrence import extend_series_to_horizon, regenerate_series
 
 
+def _wrap_label_words(label) -> str:
+    """`Starting time` → `Starting<br>time` so admin th wraps each word.
+
+    The lazy gettext proxy is resolved here at class-load time; project's
+    locale catalogs ship empty strings, so admin column headers stay in
+    English regardless of the active language — same as today.
+    """
+    # Safe: input is escape()'d first; only `<br>` is injected.
+    return mark_safe(escape(str(label)).replace(" ", "<br>"))  # noqa: S308
+
+
 def _make_display(column: Column):
     """Wrap a column formatter as an admin display method."""
 
@@ -28,7 +39,7 @@ def _make_display(column: Column):
 
     _display.__name__ = f"col_{column.key}"
     return admin.display(
-        description=cast("str", column.label),
+        description=_wrap_label_words(column.label),
         ordering=column.db_field,
     )(_display)
 

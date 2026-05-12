@@ -32,7 +32,19 @@
     }
 
     function columnLabel(th) {
-        return (th.textContent || "").replace(/\s+/g, " ").trim();
+        // Walk children, treating <br> as a space so descriptions like
+        // "Starting<br>time" come back as "Starting time" for pref matching.
+        var parts = [];
+        function walk(node) {
+            if (node.nodeType === 3) {
+                parts.push(node.textContent);
+            } else if (node.nodeType === 1) {
+                if (node.tagName === "BR") parts.push(" ");
+                else node.childNodes.forEach(walk);
+            }
+        }
+        walk(th);
+        return parts.join("").replace(/\s+/g, " ").trim();
     }
 
     function allLabels(table) {
