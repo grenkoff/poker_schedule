@@ -26,9 +26,12 @@
     top: 0;
     z-index: 2;
     background: var(--darkened-bg, #f8f8f8);
-    /* Header text gets <br> between words server-side — keep it
-     * top-aligned so multi-line headers don't push body cells down. */
-    vertical-align: top;
+    /* Match the public table: each word on its own line (via server-side
+     * <br>), top + left aligned so headers don't grow the row height.
+     * !important needed because Django admin's `#changelist table thead th`
+     * selector is more specific and forces vertical-align: middle. */
+    vertical-align: top !important;
+    text-align: left !important;
     white-space: normal;
 }
 
@@ -161,6 +164,15 @@
     text-transform: none;
     letter-spacing: normal;
     color: #888;
+}
+#result_list thead th select.tz-picker {
+    margin-top: 4px;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: 0.75rem;
+    padding: 2px 4px;
+    max-width: 140px;
 }
 
 /* Drag-and-drop rows in the modal list. */

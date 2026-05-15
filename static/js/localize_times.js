@@ -67,8 +67,7 @@
     ];
 
     function offsetLabel(minutes) {
-        if (minutes === 0) return "UTC";
-        var sign = minutes > 0 ? "+" : "-";
+        var sign = minutes >= 0 ? "+" : "-";
         var abs = Math.abs(minutes);
         var h = Math.floor(abs / 60);
         var m = abs % 60;
@@ -106,18 +105,8 @@
         return detected;
     }
 
-    function annotateHeader(th, offset) {
+    function clearAnnotation(th) {
         Array.from(th.querySelectorAll(".tz-anno")).forEach(function (n) { n.remove(); });
-        // The picker host already shows the chosen offset inside the <select>;
-        // skip the redundant annotation.
-        if (th.hasAttribute("data-tz-picker")) return;
-        var br = document.createElement("br");
-        br.className = "tz-anno";
-        var span = document.createElement("span");
-        span.className = "tz-anno";
-        span.textContent = "(" + offsetLabel(offset) + ")";
-        th.appendChild(br);
-        th.appendChild(span);
     }
 
     function ensurePicker(th, onChange) {
@@ -148,10 +137,10 @@
         var offset = effectiveOffset();
         document.querySelectorAll("table").forEach(function (table) {
             localizeCells(table, offset);
-            tzAwareHeaders(table).forEach(function (th) { annotateHeader(th, offset); });
-        });
-        document.querySelectorAll("th[data-tz-picker]").forEach(function (th) {
-            ensurePicker(th, applyAll);
+            tzAwareHeaders(table).forEach(function (th) {
+                clearAnnotation(th);
+                ensurePicker(th, applyAll);
+            });
         });
     }
 
