@@ -223,6 +223,8 @@
         .field-error { color: #c33; font-size: 0.825rem; margin-top: 0.25rem; }
     </style>
     <script src="https://unpkg.com/htmx.org@2.0.4" crossorigin="anonymous" defer></script>
+    {% load static %}
+    <script src="{% static 'js/show_password.js' %}" defer></script>
     {% block extra_head %}{% endblock %}
 </head>
 <body>
