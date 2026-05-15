@@ -34,12 +34,15 @@
     function columnLabel(th) {
         // Walk children, treating <br> as a space so descriptions like
         // "Starting<br>time" come back as "Starting time" for pref matching.
+        // Skip <select> (TZ picker contents) so option labels don't leak
+        // into the column label used for localStorage prefs.
         var parts = [];
         function walk(node) {
             if (node.nodeType === 3) {
                 parts.push(node.textContent);
             } else if (node.nodeType === 1) {
                 if (node.tagName === "BR") parts.push(" ");
+                else if (node.tagName === "SELECT") return;
                 else node.childNodes.forEach(walk);
             }
         }
