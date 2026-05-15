@@ -105,7 +105,7 @@ ALL_COLUMNS: tuple[Column, ...] = (
     ),
     Column(
         "rake_percent",
-        _("Rake %"),
+        _("Rake, %"),
         lambda t: (
             _with_unit(_fmt_decimal(t.rake / t.buy_in_total * 100), suffix="%")
             if t.buy_in_total
@@ -121,7 +121,7 @@ ALL_COLUMNS: tuple[Column, ...] = (
     ),
     Column(
         "payout_percent",
-        _("Payout %"),
+        _("Payout, %"),
         lambda t: _with_unit(str(t.payout_percent), suffix="%"),
         sort_key="payout_percent",
         db_field="payout_percent",
