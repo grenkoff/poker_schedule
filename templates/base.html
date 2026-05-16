@@ -4,11 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}{% trans "Poker Schedule" %}{% endblock %}</title>
-    {% get_available_languages as LANGUAGES %}
-    {% get_language_info_list for LANGUAGES as languages %}
-    {% for lang in languages %}
-        <link rel="alternate" hreflang="{{ lang.code }}" href="/{{ lang.code }}/">
-    {% endfor %}
     <style>
         * { box-sizing: border-box; }
         body {
@@ -48,30 +43,6 @@
             font-size: 0.925rem;
         }
         .btn-link:hover { color: #1a1a1a; }
-        /* EN | RU language switcher. Active language is bold and dimmed
-           so it reads as a label rather than a click target. */
-        .lang-switch {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.35rem;
-            font-size: 0.9rem;
-        }
-        .lang-switch button {
-            background: none;
-            border: none;
-            padding: 0;
-            color: #555;
-            cursor: pointer;
-            font-size: inherit;
-            font-family: inherit;
-        }
-        .lang-switch button:hover { color: #1a1a1a; }
-        .lang-switch .lang-current {
-            color: #1a1a1a;
-            font-weight: 600;
-            cursor: default;
-        }
-        .lang-switch .lang-sep { color: #ccc; }
         /* User menu: pure-CSS hover dropdown. The trigger and popover
            share a parent, and the popover sits flush against the trigger
            (top: 100%, no margin gap) so moving the mouse from one to the
@@ -335,21 +306,6 @@
                     <a href="{% url 'account_login' %}" class="nav-link">{% trans "Log in" %}</a>
                     <a href="{% url 'account_signup' %}" class="nav-link">{% trans "Sign up" %}</a>
                 {% endif %}
-                {% get_current_language as CURRENT_LANGUAGE %}
-                <span class="lang-switch">
-                    {% for lang in languages %}
-                        {% if lang.code == CURRENT_LANGUAGE %}
-                            <span class="lang-current">{{ lang.code|upper }}</span>
-                        {% else %}
-                            <form action="{% url 'set_language' %}" method="post" style="display:inline">
-                                {% csrf_token %}
-                                <input name="next" type="hidden" value="{{ request.get_full_path }}">
-                                <button type="submit" name="language" value="{{ lang.code }}">{{ lang.code|upper }}</button>
-                            </form>
-                        {% endif %}
-                        {% if not forloop.last %}<span class="lang-sep">|</span>{% endif %}
-                    {% endfor %}
-                </span>
             </div>
         </nav>
     </header>

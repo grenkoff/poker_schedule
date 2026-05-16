@@ -43,7 +43,7 @@ def should_nag(request: HttpRequest) -> bool:
     if request.headers.get("HX-Request") == "true":
         return False
     # Skip on auth/MFA setup paths so the user can navigate there without
-    # the banner repeating. Path may carry an i18n prefix like /en/accounts/.
+    # the banner repeating.
     if "/accounts/" in request.path:
         return False
     if request.method != "GET":

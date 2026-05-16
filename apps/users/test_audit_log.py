@@ -104,7 +104,7 @@ def test_audit_source_is_cli_when_no_request_context():
 @pytest.mark.django_db
 def test_audit_source_signup_for_non_admin_request():
     rf = RequestFactory()
-    request = rf.post("/en/accounts/signup/")
+    request = rf.post("/accounts/signup/")
     request.user = type("Anon", (), {"is_authenticated": False})()
     set_current_request(request)
 

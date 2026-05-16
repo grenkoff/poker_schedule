@@ -148,7 +148,7 @@ def test_admin_allows_delete_button_for_regular_admin():
 def test_resaving_superadmin_with_unrelated_changes_is_a_no_op():
     sa = _make("sa", role=Role.SUPERADMIN)
     sa.timezone = "Europe/Moscow"
-    sa.preferred_language = "ru"
+    sa.preferred_language = "en"
     sa.save()
     sa.refresh_from_db()
     assert sa.role == Role.SUPERADMIN

@@ -8,7 +8,6 @@ from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext as _
-from django.utils.translation import override
 
 from .forms import TIMEZONE_SUGGESTIONS, ProfileForm
 
@@ -18,12 +17,9 @@ def profile(request: HttpRequest) -> HttpResponse:
     if request.method == "POST":
         form = ProfileForm(request.POST, instance=request.user)
         if form.is_valid():
-            user = form.save()
+            form.save()
             messages.success(request, _("Profile updated."))
-            # Redirect into the user's chosen language so the next page
-            # loads in it — i18n_patterns drives the effective locale.
-            with override(user.preferred_language):
-                return redirect(reverse("users:profile"))
+            return redirect(reverse("users:profile"))
     else:
         form = ProfileForm(instance=request.user)
 

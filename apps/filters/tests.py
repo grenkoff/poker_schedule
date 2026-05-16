@@ -221,8 +221,8 @@ def client() -> Client:
 @pytest.mark.django_db
 def test_htmx_request_returns_partial_template(client: Client, pokerok: PokerRoom):
     _make(pokerok, name="Visible Test")
-    full = client.get("/en/")
-    partial = client.get("/en/", HTTP_HX_REQUEST="true")
+    full = client.get("/")
+    partial = client.get("/", HTTP_HX_REQUEST="true")
     assert b"<html" in full.content
     assert b"<html" not in partial.content
     assert b"Visible Test" in partial.content
@@ -232,7 +232,7 @@ def test_htmx_request_returns_partial_template(client: Client, pokerok: PokerRoo
 def test_list_view_filters_by_game_type(client: Client, pokerok: PokerRoom):
     _make(pokerok, name="NLHE Event", game_type=GameType.NLHE)
     _make(pokerok, name="PLO Event", game_type=GameType.PLO)
-    response = client.get("/en/?game_type=PLO")
+    response = client.get("/?game_type=PLO")
     assert b"PLO Event" in response.content
     assert b"NLHE Event" not in response.content
 
@@ -252,6 +252,6 @@ def test_list_view_sort_param_reorders(client: Client, pokerok: PokerRoom):
         buy_in_total=Decimal("220.00"),
         starting_time=base + timedelta(minutes=1),
     )
-    response = client.get("/en/?sort=-buy_in")
+    response = client.get("/?sort=-buy_in")
     body = response.content.decode()
     assert body.index("Expensive Event") < body.index("Cheap Event")

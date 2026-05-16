@@ -49,12 +49,15 @@
     border-spacing: 0;
 }
 
-#result_list thead th {
+#result_list thead th,
+#changelist-form .sticky-thead-ghost thead th {
     background: var(--darkened-bg, #f8f8f8);
     /* Match the public table: each word on its own line (via server-side
      * <br>), top + left aligned so headers don't grow the row height.
      * !important needed because Django admin's `#changelist table thead th`
-     * selector is more specific and forces vertical-align: middle. */
+     * selector is more specific and forces vertical-align: middle.
+     * Ghost selector also needed — sticky_thead.js copies class but not
+     * id, so `#result_list` doesn't reach the cloned thead. */
     vertical-align: top !important;
     text-align: left !important;
     white-space: normal;

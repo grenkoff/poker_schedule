@@ -134,7 +134,7 @@ def test_shared_filter_created_by_nullable_on_user_delete():
 @pytest.mark.django_db
 def test_anon_can_create_share(client: Client):
     response = client.post(
-        "/en/share/create/",
+        "/share/create/",
         {"game_type": "PLO", "buy_in_min": "10"},
     )
     assert response.status_code == 302
@@ -149,7 +149,7 @@ def test_anon_can_create_share(client: Client):
 def test_authenticated_share_records_owner(client: Client):
     user = User.objects.create_user(username="u", email="u@example.com", password="x")
     client.force_login(user)
-    client.post("/en/share/create/", {"game_type": "NLHE"})
+    client.post("/share/create/", {"game_type": "NLHE"})
     shared = SharedFilter.objects.latest("created_at")
     assert shared.created_by == user
 
@@ -157,7 +157,7 @@ def test_authenticated_share_records_owner(client: Client):
 @pytest.mark.django_db
 def test_share_create_preserves_multi_valued_filters(client: Client):
     # Django's test client serializes list values as repeated keys.
-    client.post("/en/share/create/", {"game_type": ["PLO", "NLHE"], "rooms": ["1", "2"]})
+    client.post("/share/create/", {"game_type": ["PLO", "NLHE"], "rooms": ["1", "2"]})
     shared = SharedFilter.objects.latest("created_at")
     assert shared.filter_params.count("game_type=") == 2
     assert "game_type=PLO" in shared.filter_params
@@ -166,7 +166,7 @@ def test_share_create_preserves_multi_valued_filters(client: Client):
 
 @pytest.mark.django_db
 def test_share_create_rejects_get(client: Client):
-    response = client.get("/en/share/create/")
+    response = client.get("/share/create/")
     assert response.status_code == 405
 
 
@@ -179,7 +179,7 @@ def test_shared_view_renders_with_stored_filter(client: Client, pokerok: PokerRo
     _make_tournament(pokerok, name="PLO Event", game_type=GameType.PLO)
 
     shared = SharedFilter.objects.create(filter_params="game_type=PLO")
-    response = client.get(f"/en/s/{shared.slug}/")
+    response = client.get(f"/s/{shared.slug}/")
     assert response.status_code == 200
     assert b"PLO Event" in response.content
     assert b"NLHE Event" not in response.content
@@ -187,7 +187,7 @@ def test_shared_view_renders_with_stored_filter(client: Client, pokerok: PokerRo
 
 @pytest.mark.django_db
 def test_shared_view_404_for_unknown_slug(client: Client):
-    response = client.get("/en/s/does-not-exist/")
+    response = client.get("/s/does-not-exist/")
     assert response.status_code == 404
 
 
@@ -198,7 +198,7 @@ def test_shared_view_404_for_expired_link(client: Client, pokerok: PokerRoom):
         filter_params="",
         expires_at=timezone.now() - timedelta(minutes=1),
     )
-    response = client.get(f"/en/s/{shared.slug}/")
+    response = client.get(f"/s/{shared.slug}/")
     assert response.status_code == 404
 
 
@@ -207,7 +207,7 @@ def test_shared_view_shows_owner_attribution(client: Client, pokerok: PokerRoom)
     _make_tournament(pokerok)
     user = User.objects.create_user(username="sharer", email="sharer@example.com", password="x")
     shared = SharedFilter.objects.create(filter_params="", created_by=user)
-    response = client.get(f"/en/s/{shared.slug}/")
+    response = client.get(f"/s/{shared.slug}/")
     assert b"sharer@example.com" in response.content
 
 
@@ -222,7 +222,7 @@ def test_shared_view_allows_sort_on_top_of_stored_filter(client: Client, pokerok
         starting_time=now + timedelta(minutes=5),
     )
     shared = SharedFilter.objects.create(filter_params="game_type=NLHE")
-    response = client.get(f"/en/s/{shared.slug}/?sort=-buy_in")
+    response = client.get(f"/s/{shared.slug}/?sort=-buy_in")
     body = response.content.decode()
     assert body.index("Expensive") < body.index("Cheap")
 
@@ -233,7 +233,7 @@ def test_shared_view_allows_sort_on_top_of_stored_filter(client: Client, pokerok
 @pytest.mark.django_db
 def test_pdf_export_returns_pdf_content(client: Client, pokerok: PokerRoom):
     _make_tournament(pokerok, name="PDF Event")
-    response = client.get("/en/export/pdf/")
+    response = client.get("/export/pdf/")
     assert response.status_code == 200
     assert response["Content-Type"] == "application/pdf"
     assert response["Content-Disposition"].startswith("attachment; filename=")
@@ -247,9 +247,9 @@ def test_pdf_export_applies_filter(client: Client, pokerok: PokerRoom):
     # Different filter values have to produce different PDFs — trivially
     # asserting size order is brittle (the filter-summary band can add more
     # bytes than a dropped row saves), so just confirm distinct output.
-    full = client.get("/en/export/pdf/")
-    plo_only = client.get("/en/export/pdf/?game_type=PLO")
-    nlhe_only = client.get("/en/export/pdf/?game_type=NLHE")
+    full = client.get("/export/pdf/")
+    plo_only = client.get("/export/pdf/?game_type=PLO")
+    nlhe_only = client.get("/export/pdf/?game_type=NLHE")
     assert full.status_code == plo_only.status_code == nlhe_only.status_code == 200
     assert plo_only.content != full.content
     assert plo_only.content != nlhe_only.content
@@ -257,7 +257,7 @@ def test_pdf_export_applies_filter(client: Client, pokerok: PokerRoom):
 
 @pytest.mark.django_db
 def test_pdf_export_empty_state(client: Client):
-    response = client.get("/en/export/pdf/")
+    response = client.get("/export/pdf/")
     assert response.status_code == 200
     assert response.content.startswith(b"%PDF")
 
@@ -267,7 +267,7 @@ def test_pdf_export_empty_state(client: Client):
 
 @pytest.mark.django_db
 def test_main_list_has_share_and_pdf_buttons(client: Client):
-    response = client.get("/en/")
+    response = client.get("/")
     assert b"Share this view" in response.content
     assert b"Download PDF" in response.content
     assert reverse("filters:create_share").encode() in response.content

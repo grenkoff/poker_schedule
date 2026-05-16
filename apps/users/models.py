@@ -9,7 +9,6 @@ from django.utils.translation import gettext_lazy as _
 # in emails and PDFs, not only in the interactive UI.
 LANGUAGE_CHOICES = [
     ("en", "English"),
-    ("ru", "Русский"),
 ]
 
 

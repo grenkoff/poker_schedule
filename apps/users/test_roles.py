@@ -141,7 +141,7 @@ def test_createsuperuser_command_assigns_superadmin_role():
 @pytest.mark.django_db
 def test_allauth_signup_creates_user_role(client: Client):
     client.post(
-        "/en/accounts/signup/",
+        "/accounts/signup/",
         {
             "email": "fresh@example.com",
             "password1": "ComplexPass#2026",
