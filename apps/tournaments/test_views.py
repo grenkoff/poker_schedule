@@ -167,5 +167,3 @@ def test_list_view_renders_buy_in(client: Client, pokerok: PokerRoom):
     # Whole-dollar value: prefix only, no trailing ".00".
     assert b"$23" in response.content
     assert b"23.00" not in response.content
-
-
