@@ -104,6 +104,7 @@ AUTHENTICATION_BACKENDS = [
 ACCOUNT_LOGIN_METHODS = {"email"}
 ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*", "password2*"]
 ACCOUNT_UNIQUE_EMAIL = True
+ACCOUNT_ADAPTER = "apps.users.adapter.SilentAccountAdapter"
 # Options: "none" | "optional" | "mandatory". `optional` lets users sign in
 # right away and still sends a verification email; flip to "mandatory" in
 # prod once a real SMTP provider is wired up.

@@ -30,7 +30,7 @@
         header nav > a { color: #1a1a1a; text-decoration: none; font-weight: 600; }
         .nav-right {
             display: flex;
-            gap: 1rem;
+            gap: 0.75rem;
             align-items: center;
         }
         .nav-link {
@@ -48,6 +48,83 @@
             font-size: 0.925rem;
         }
         .btn-link:hover { color: #1a1a1a; }
+        /* EN | RU language switcher. Active language is bold and dimmed
+           so it reads as a label rather than a click target. */
+        .lang-switch {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.9rem;
+        }
+        .lang-switch button {
+            background: none;
+            border: none;
+            padding: 0;
+            color: #555;
+            cursor: pointer;
+            font-size: inherit;
+            font-family: inherit;
+        }
+        .lang-switch button:hover { color: #1a1a1a; }
+        .lang-switch .lang-current {
+            color: #1a1a1a;
+            font-weight: 600;
+            cursor: default;
+        }
+        .lang-switch .lang-sep { color: #ccc; }
+        /* User menu: pure-CSS hover dropdown. The trigger and popover
+           share a parent, and the popover sits flush against the trigger
+           (top: 100%, no margin gap) so moving the mouse from one to the
+           other doesn't lose the :hover state. */
+        .user-menu { position: relative; display: inline-block; }
+        .user-menu-trigger {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            cursor: pointer;
+            color: #555;
+            font-size: 0.925rem;
+            padding: 0.2rem 0;
+            user-select: none;
+        }
+        .user-menu-trigger:hover { color: #1a1a1a; }
+        .user-menu-caret {
+            font-size: 0.65rem;
+            line-height: 1;
+            transition: transform 0.15s ease;
+        }
+        .user-menu:hover .user-menu-caret { transform: rotate(180deg); }
+        .user-menu-popover {
+            position: absolute;
+            right: 0;
+            top: 100%;
+            background: #fff;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            min-width: 160px;
+            z-index: 200;
+            padding: 0.25rem 0;
+            display: none;
+        }
+        .user-menu:hover .user-menu-popover,
+        .user-menu:focus-within .user-menu-popover { display: block; }
+        .user-menu-popover a,
+        .user-menu-popover button {
+            display: block;
+            width: 100%;
+            text-align: left;
+            background: none;
+            border: none;
+            padding: 0.45rem 0.85rem;
+            color: #1a1a1a;
+            font-size: 0.9rem;
+            cursor: pointer;
+            text-decoration: none;
+            font-family: inherit;
+        }
+        .user-menu-popover a:hover,
+        .user-menu-popover button:hover { background: #f5f5f5; }
         .flash {
             padding: 0.6rem 1rem;
             border-radius: 4px;
@@ -72,6 +149,11 @@
         }
         .page-actions .btn-secondary,
         .page-actions button.btn-secondary {
+            /* inline-flex + fixed line-height keeps <a> and <button>
+               variants the same height (default button line-height
+               differs from anchor's). */
+            display: inline-flex;
+            align-items: center;
             background: #fff;
             color: #1a1a1a;
             border: 1px solid #ccc;
@@ -80,8 +162,11 @@
             border-radius: 3px;
             cursor: pointer;
             font-size: 0.9rem;
+            line-height: 1.25;
+            font-family: inherit;
         }
         .page-actions .btn-secondary:hover { background: #f5f5f5; }
+        .page-actions form { display: inline-flex; }
         .shared-meta { margin-bottom: 1.5rem; }
         .shared-meta a { margin-right: 1rem; }
         table {
@@ -233,28 +318,38 @@
             <a href="{% url 'tournaments:list' %}">{% trans "Poker Schedule" %}</a>
             <div class="nav-right">
                 {% if request.user.is_authenticated %}
-                    <a href="{% url 'users:profile' %}" class="nav-link">{{ request.user.email|default:request.user.username }}</a>
-                    <form action="{% url 'account_logout' %}" method="post" style="display:inline">
-                        {% csrf_token %}
-                        <button type="submit" class="btn-link">{% trans "Log out" %}</button>
-                    </form>
+                    <div class="user-menu" tabindex="0">
+                        <span class="user-menu-trigger">
+                            <span>{{ request.user.email|default:request.user.username }}</span>
+                            <span class="user-menu-caret" aria-hidden="true">▾</span>
+                        </span>
+                        <div class="user-menu-popover">
+                            <a href="{% url 'users:profile' %}">{% trans "Profile" %}</a>
+                            <form action="{% url 'account_logout' %}" method="post">
+                                {% csrf_token %}
+                                <button type="submit">{% trans "Log out" %}</button>
+                            </form>
+                        </div>
+                    </div>
                 {% else %}
                     <a href="{% url 'account_login' %}" class="nav-link">{% trans "Log in" %}</a>
                     <a href="{% url 'account_signup' %}" class="nav-link">{% trans "Sign up" %}</a>
                 {% endif %}
-                <form action="{% url 'set_language' %}" method="post" style="display:inline">
-                    {% csrf_token %}
-                    <input name="next" type="hidden" value="{{ request.get_full_path }}">
-                    <select name="language" onchange="this.form.submit()">
-                        {% get_current_language as CURRENT_LANGUAGE %}
-                        {% for lang in languages %}
-                            <option value="{{ lang.code }}"
-                                    {% if lang.code == CURRENT_LANGUAGE %}selected{% endif %}>
-                                {{ lang.name_local }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                </form>
+                {% get_current_language as CURRENT_LANGUAGE %}
+                <span class="lang-switch">
+                    {% for lang in languages %}
+                        {% if lang.code == CURRENT_LANGUAGE %}
+                            <span class="lang-current">{{ lang.code|upper }}</span>
+                        {% else %}
+                            <form action="{% url 'set_language' %}" method="post" style="display:inline">
+                                {% csrf_token %}
+                                <input name="next" type="hidden" value="{{ request.get_full_path }}">
+                                <button type="submit" name="language" value="{{ lang.code }}">{{ lang.code|upper }}</button>
+                            </form>
+                        {% endif %}
+                        {% if not forloop.last %}<span class="lang-sep">|</span>{% endif %}
+                    {% endfor %}
+                </span>
             </div>
         </nav>
     </header>
