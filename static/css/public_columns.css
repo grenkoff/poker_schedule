@@ -4,8 +4,58 @@
  * independent. */
 
 .public-changelist {
-    overflow: visible;
+    /* X-only scroll container. `overflow-y: clip` is intentionally kept
+     * as clip (per CSS Overflow L3 spec it is NOT normalized to auto when
+     * paired with overflow-x: auto, unlike `visible`). The wrapper thus
+     * scrolls horizontally but does not establish a Y scroll context, so
+     * `position: sticky; top: 0` on table headers bubbles up to the
+     * window and pins to viewport top during page scroll.
+     * Native horizontal scrollbar is hidden — the .hscroll-proxy sibling
+     * (sticky bottom: 0) provides the visible scrollbar. */
+    overflow-x: auto;
+    overflow-y: clip;
+    scrollbar-width: none;
 }
+.public-changelist::-webkit-scrollbar { display: none; }
+
+.hscroll-proxy {
+    position: sticky;
+    bottom: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    height: 20px;
+    z-index: 5;
+    background: rgba(255, 255, 255, 0.92);
+}
+.hscroll-proxy::-webkit-scrollbar {
+    height: 20px;
+    background: #f0f0f0;
+}
+.hscroll-proxy::-webkit-scrollbar-thumb {
+    background: #b0b0b0;
+    border-radius: 10px;
+    border: 4px solid #f0f0f0;
+}
+.hscroll-proxy::-webkit-scrollbar-thumb:hover { background: #888; }
+.hscroll-proxy-inner { height: 1px; }
+
+/* Sticky-top thead ghost — a sibling of .public-changelist, populated by
+ * JS with a clone of the table's thead. Sits OUTSIDE the X-scroll
+ * wrapper so its `position: sticky; top: 0` pins to the viewport
+ * (compositor-thread, no JS jank). Horizontal scroll is synced with the
+ * wrapper by JS. */
+.sticky-thead-ghost {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    background: #f7f7f7;
+    /* margin-bottom is set by JS to `-ghost.offsetHeight` so the ghost
+     * overlays the original thead instead of pushing the body down. */
+}
+.sticky-thead-ghost::-webkit-scrollbar { display: none; }
 
 .public-changelist-table {
     width: 100%;
@@ -24,9 +74,6 @@
 }
 
 .public-changelist-table thead th {
-    position: sticky;
-    top: 0;
-    z-index: 2;
     background: #f7f7f7;
     text-transform: uppercase;
     font-size: 0.75rem;

@@ -109,15 +109,14 @@
         Array.from(th.querySelectorAll(".tz-anno")).forEach(function (n) { n.remove(); });
     }
 
-    function ensurePicker(th, onChange) {
+    function ensurePicker(th) {
         var sel = th.querySelector("select.tz-picker");
         if (!sel) {
             sel = document.createElement("select");
             sel.className = "tz-picker";
-            sel.addEventListener("change", function () {
-                localStorage.setItem(STORAGE_KEY, sel.value);
-                onChange();
-            });
+            // Stop click propagation so a click in the header cell doesn't
+            // also trigger sort. Change events are handled via delegation
+            // on document.body (so cloned <select>s work too).
             sel.addEventListener("click", function (e) { e.stopPropagation(); });
             var br = document.createElement("br");
             br.className = "tz-picker-br";
@@ -139,8 +138,13 @@
             localizeCells(table, offset);
             tzAwareHeaders(table).forEach(function (th) {
                 clearAnnotation(th);
-                ensurePicker(th, applyAll);
+                ensurePicker(th);
             });
+        });
+        // Keep all picker <select>s (including any cloned into the sticky
+        // thead ghost) in sync with the current chosen offset.
+        document.querySelectorAll("select.tz-picker").forEach(function (s) {
+            s.value = String(offset);
         });
     }
 
@@ -148,7 +152,18 @@
         applyAll();
         if (document.body) {
             document.body.addEventListener("htmx:afterSwap", function () { applyAll(); });
+            // Event delegation: catch change on any picker (original or clone).
+            document.body.addEventListener("change", function (e) {
+                if (e.target && e.target.classList && e.target.classList.contains("tz-picker")) {
+                    localStorage.setItem(STORAGE_KEY, e.target.value);
+                    applyAll();
+                }
+            });
         }
+        // sticky_thead clones the original thead — its <select> ends up at
+        // selectedIndex 0. After it rebuilds, re-run applyAll to push the
+        // effective offset into the cloned picker(s).
+        window.addEventListener("sticky-thead-rebuilt", applyAll);
     }
 
     if (document.readyState === "loading") {

@@ -7,12 +7,41 @@
 
 /* ---- Wide-table UX: page-level scroll + sticky header + sticky col --- */
 
-/* No overflow on .results — the WINDOW becomes the scroll container.
- * That's the only way native `position: sticky` works for both axes
- * (thead sticks to viewport top; first col sticks to viewport left). */
+/* X-only scroll container. `overflow-y: clip` survives normalization in
+ * modern browsers (Chrome 90+, Firefox 81+, Safari 16+), so the wrapper
+ * scrolls horizontally but does NOT establish a Y scroll context —
+ * `position: sticky; top: 0` on thead bubbles up to the window and pins
+ * to viewport top during vertical page scroll. Native horizontal
+ * scrollbar is hidden; the .hscroll-proxy sibling provides a sticky one
+ * pinned to viewport bottom while the table is in view. */
 #changelist-form .results {
-    overflow: visible;
+    overflow-x: auto;
+    overflow-y: clip;
+    scrollbar-width: none;
 }
+#changelist-form .results::-webkit-scrollbar { display: none; }
+
+#changelist-form .hscroll-proxy {
+    position: sticky;
+    bottom: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    height: 20px;
+    z-index: 5;
+    background: var(--body-bg, #fff);
+}
+#changelist-form .hscroll-proxy-inner { height: 1px; }
+
+#changelist-form .sticky-thead-ghost {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    background: var(--darkened-bg, #f8f8f8);
+}
+#changelist-form .sticky-thead-ghost::-webkit-scrollbar { display: none; }
 
 #result_list {
     min-width: max-content;
@@ -20,11 +49,7 @@
     border-spacing: 0;
 }
 
-/* Sticky header — sticks to the top of the viewport. */
 #result_list thead th {
-    position: sticky;
-    top: 0;
-    z-index: 2;
     background: var(--darkened-bg, #f8f8f8);
     /* Match the public table: each word on its own line (via server-side
      * <br>), top + left aligned so headers don't grow the row height.
