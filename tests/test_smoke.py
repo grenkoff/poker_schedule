@@ -26,13 +26,3 @@ def test_home_renders_in_english(client: Client) -> None:
     response = client.get("/en/")
     assert response.status_code == 200
     assert b"Poker Schedule" in response.content
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize(
-    "lang_prefix",
-    ["en", "ru"],
-)
-def test_home_serves_each_locale(client: Client, lang_prefix: str) -> None:
-    response = client.get(f"/{lang_prefix}/")
-    assert response.status_code == 200

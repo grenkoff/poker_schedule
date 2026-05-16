@@ -110,20 +110,19 @@ def test_profile_get_for_authenticated_user(client: Client):
 
 
 @pytest.mark.django_db
-def test_profile_post_updates_timezone_and_language(client: Client):
+def test_profile_post_updates_timezone(client: Client):
     user = User.objects.create_user(username="u1", email="u1@example.com", password="x")
     client.force_login(user)
     response = client.post(
         "/en/profile/",
-        {"timezone": "Europe/Moscow", "preferred_language": "ru"},
+        {"timezone": "Europe/Moscow", "preferred_language": "en"},
     )
-    # Redirects into the user's newly-chosen locale (ru/ prefix, not en/).
     assert response.status_code == 302
-    assert response["Location"] == "/ru/profile/"
+    assert response["Location"] == "/en/profile/"
 
     user.refresh_from_db()
     assert user.timezone == "Europe/Moscow"
-    assert user.preferred_language == "ru"
+    assert user.preferred_language == "en"
 
 
 @pytest.mark.django_db

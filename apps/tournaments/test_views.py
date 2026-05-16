@@ -172,10 +172,3 @@ def test_list_view_renders_buy_in(client: Client, pokerok: PokerRoom):
     assert b"23.00" not in response.content
 
 
-@pytest.mark.django_db
-def test_list_view_renders_russian_locale(client: Client, pokerok: PokerRoom):
-    soon = datetime.now(UTC) + timedelta(hours=2)
-    _make_tournament(pokerok, name="RU Event", starting_time=soon)
-    response = client.get("/ru/")
-    assert response.status_code == 200
-    assert b"RU Event" in response.content
