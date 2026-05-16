@@ -98,17 +98,14 @@ def client() -> Client:
 
 @pytest.mark.django_db
 def test_list_view_url_resolves():
-    from django.utils import translation
-
-    with translation.override("en"):
-        assert reverse("tournaments:list") == "/en/"
+    assert reverse("tournaments:list") == "/"
 
 
 @pytest.mark.django_db
 def test_list_view_shows_upcoming_tournaments(client: Client, pokerok: PokerRoom):
     soon = datetime.now(UTC) + timedelta(hours=2)
     _make_tournament(pokerok, name="Upcoming Tournament", starting_time=soon)
-    response = client.get("/en/")
+    response = client.get("/")
     assert response.status_code == 200
     assert b"Upcoming Tournament" in response.content
     assert b"Pokerok" in response.content
@@ -118,7 +115,7 @@ def test_list_view_shows_upcoming_tournaments(client: Client, pokerok: PokerRoom
 def test_list_view_hides_past_tournaments(client: Client, pokerok: PokerRoom):
     past = datetime.now(UTC) - timedelta(hours=2)
     _make_tournament(pokerok, name="Yesterday's Event", starting_time=past)
-    response = client.get("/en/")
+    response = client.get("/")
     assert b"Yesterday's Event" not in response.content
 
 
@@ -127,14 +124,14 @@ def test_list_view_orders_by_starting_time_ascending(client: Client, pokerok: Po
     now = datetime.now(UTC)
     _make_tournament(pokerok, name="Later Event", starting_time=now + timedelta(hours=5))
     _make_tournament(pokerok, name="Sooner Event", starting_time=now + timedelta(hours=1))
-    response = client.get("/en/")
+    response = client.get("/")
     body = response.content.decode()
     assert body.index("Sooner Event") < body.index("Later Event")
 
 
 @pytest.mark.django_db
 def test_list_view_empty_state(client: Client):
-    response = client.get("/en/")
+    response = client.get("/")
     assert response.status_code == 200
     assert b"No upcoming tournaments" in response.content
 
@@ -144,11 +141,11 @@ def test_list_view_paginates(client: Client, pokerok: PokerRoom):
     base = datetime.now(UTC) + timedelta(hours=1)
     for i in range(51):
         _make_tournament(pokerok, name=f"Event {i:03d}", starting_time=base + timedelta(minutes=i))
-    page1 = client.get("/en/")
+    page1 = client.get("/")
     assert page1.status_code == 200
     assert b"Page 1 of 2" in page1.content
 
-    page2 = client.get("/en/?page=2")
+    page2 = client.get("/?page=2")
     assert page2.status_code == 200
     assert b"Event 050" in page2.content
 
@@ -164,7 +161,7 @@ def test_list_view_renders_buy_in(client: Client, pokerok: PokerRoom):
         buy_in_without_rake=Decimal("23.00"),
         rake=Decimal("2.50"),
     )
-    response = client.get("/en/")
+    response = client.get("/")
     # Decimal value: dollar prefix + 2 decimals.
     assert b"$25.50" in response.content
     # Whole-dollar value: prefix only, no trailing ".00".

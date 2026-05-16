@@ -32,7 +32,7 @@ def client() -> Client:
 
 @pytest.mark.django_db
 def test_signup_page_renders(client: Client):
-    response = client.get("/en/accounts/signup/")
+    response = client.get("/accounts/signup/")
     assert response.status_code == 200
     # Allauth's signup form has an email field
     assert b"email" in response.content.lower()
@@ -40,13 +40,13 @@ def test_signup_page_renders(client: Client):
 
 @pytest.mark.django_db
 def test_login_page_renders(client: Client):
-    response = client.get("/en/accounts/login/")
+    response = client.get("/accounts/login/")
     assert response.status_code == 200
 
 
 @pytest.mark.django_db
 def test_password_reset_page_renders(client: Client):
-    response = client.get("/en/accounts/password/reset/")
+    response = client.get("/accounts/password/reset/")
     assert response.status_code == 200
 
 
@@ -56,7 +56,7 @@ def test_password_reset_page_renders(client: Client):
 @pytest.mark.django_db
 def test_email_based_signup_creates_user(client: Client):
     response = client.post(
-        "/en/accounts/signup/",
+        "/accounts/signup/",
         {
             "email": "newguy@example.com",
             "password1": "ComplexPass#2026",
@@ -81,7 +81,7 @@ def test_login_with_email(client: Client):
     assert user.email == "logintester@example.com"
 
     response = client.post(
-        "/en/accounts/login/",
+        "/accounts/login/",
         {"login": "logintester@example.com", "password": "ComplexPass#2026"},
         follow=True,
     )
@@ -95,7 +95,7 @@ def test_login_with_email(client: Client):
 
 @pytest.mark.django_db
 def test_profile_requires_authentication(client: Client):
-    response = client.get("/en/profile/")
+    response = client.get("/profile/")
     assert response.status_code == 302
     assert "/accounts/login/" in response["Location"]
 
@@ -104,7 +104,7 @@ def test_profile_requires_authentication(client: Client):
 def test_profile_get_for_authenticated_user(client: Client):
     user = User.objects.create_user(username="u1", email="u1@example.com", password="x")
     client.force_login(user)
-    response = client.get("/en/profile/")
+    response = client.get("/profile/")
     assert response.status_code == 200
     assert b"u1@example.com" in response.content
 
@@ -114,11 +114,11 @@ def test_profile_post_updates_timezone(client: Client):
     user = User.objects.create_user(username="u1", email="u1@example.com", password="x")
     client.force_login(user)
     response = client.post(
-        "/en/profile/",
+        "/profile/",
         {"timezone": "Europe/Moscow", "preferred_language": "en"},
     )
     assert response.status_code == 302
-    assert response["Location"] == "/en/profile/"
+    assert response["Location"] == "/profile/"
 
     user.refresh_from_db()
     assert user.timezone == "Europe/Moscow"
@@ -130,7 +130,7 @@ def test_profile_rejects_invalid_timezone(client: Client):
     user = User.objects.create_user(username="u1", email="u1@example.com", password="x")
     client.force_login(user)
     response = client.post(
-        "/en/profile/",
+        "/profile/",
         {"timezone": "Narnia/Lamppost", "preferred_language": "en"},
     )
     assert response.status_code == 200
@@ -145,7 +145,7 @@ def test_profile_blank_timezone_defaults_to_utc(client: Client):
     user.timezone = "Europe/Moscow"
     user.save()
     client.force_login(user)
-    client.post("/en/profile/", {"timezone": "", "preferred_language": "en"})
+    client.post("/profile/", {"timezone": "", "preferred_language": "en"})
     user.refresh_from_db()
     assert user.timezone == "UTC"
 
@@ -198,7 +198,7 @@ def test_authenticated_user_timezone_is_applied_to_rendered_times(client: Client
         verified_by_admin=True,
     )
 
-    response = client.get("/en/")
+    response = client.get("/")
     body = response.content.decode()
     # Moscow is +03 so 19:00 UTC → 22:00 MSK
     assert "22:00" in body
@@ -239,7 +239,7 @@ def test_anonymous_user_sees_utc(client: Client):
         periodicity=Periodicity.objects.get(name="one_off"),
         verified_by_admin=True,
     )
-    response = client.get("/en/")
+    response = client.get("/")
     body = response.content.decode()
     assert "19:00" in body
     assert "UTC" in body
@@ -255,7 +255,7 @@ def test_invalid_timezone_does_not_break_page(client: Client):
         timezone="Narnia/Lamppost",
     )
     client.force_login(user)
-    response = client.get("/en/")
+    response = client.get("/")
     assert response.status_code == 200
 
 
@@ -264,7 +264,7 @@ def test_invalid_timezone_does_not_break_page(client: Client):
 
 @pytest.mark.django_db
 def test_nav_shows_auth_links_for_anonymous(client: Client):
-    response = client.get("/en/")
+    response = client.get("/")
     assert b"Log in" in response.content
     assert b"Sign up" in response.content
 
@@ -273,7 +273,7 @@ def test_nav_shows_auth_links_for_anonymous(client: Client):
 def test_nav_shows_user_menu_for_authenticated(client: Client):
     user = User.objects.create_user(username="u", email="u@example.com", password="x")
     client.force_login(user)
-    response = client.get("/en/")
+    response = client.get("/")
     assert b"u@example.com" in response.content
     assert b"Log out" in response.content
     assert b"Sign up" not in response.content
