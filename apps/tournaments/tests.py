@@ -122,6 +122,7 @@ def test_admin_form_rejects_late_reg_before_start(pokerok):
             "re_entry": str(ReEntryOption.objects.get(name="unlimited").pk),
             "bubble": str(BubbleOption.objects.get(name="finalized_when_registration_closes").pk),
             "periodicity": str(Periodicity.objects.get(name="one_off").pk),
+            "weekdays": ["0", "1", "2", "3", "4", "5", "6"],
             "early_bird": "",
             "early_bird_type": str(EarlyBirdType.objects.get(name="compensated_at_bubble").pk),
             "featured_final_table": "",
@@ -163,6 +164,7 @@ def test_admin_form_pins_late_reg_to_start_when_disabled(pokerok):
             "re_entry": str(ReEntryOption.objects.get(name="unlimited").pk),
             "bubble": str(BubbleOption.objects.get(name="finalized_when_registration_closes").pk),
             "periodicity": str(Periodicity.objects.get(name="one_off").pk),
+            "weekdays": ["0", "1", "2", "3", "4", "5", "6"],
             "early_bird": "",
             "early_bird_type": str(EarlyBirdType.objects.get(name="compensated_at_bubble").pk),
             "featured_final_table": "",
@@ -205,6 +207,7 @@ def test_admin_form_saves_timezone(pokerok):
             "re_entry": str(ReEntryOption.objects.get(name="unlimited").pk),
             "bubble": str(BubbleOption.objects.get(name="finalized_when_registration_closes").pk),
             "periodicity": str(Periodicity.objects.get(name="one_off").pk),
+            "weekdays": ["0", "1", "2", "3", "4", "5", "6"],
             "early_bird": "",
             "early_bird_type": str(EarlyBirdType.objects.get(name="compensated_at_bubble").pk),
             "featured_final_table": "",
@@ -395,3 +398,128 @@ def test_extend_series_creates_initial_children_when_master_has_none(pokerok):
     horizon_end = now + timedelta(days=HORIZON_DAYS)
     for child in Tournament.objects.filter(series_master=master):
         assert now < child.starting_time <= horizon_end
+
+
+# --- weekday recurrence filter --------------------------------------------
+
+
+@pytest.mark.django_db
+def test_weekdays_default_is_all_days(pokerok):
+    t = _make_tournament(pokerok)
+    assert t.weekdays == 0b1111111
+
+
+@pytest.mark.django_db
+def test_regenerate_series_skips_disallowed_weekdays(pokerok):
+    daily = Periodicity.objects.get(name="every_24_hours")
+    # 2026-05-04 is a Monday. Mask 0b0111111 = all except Sunday (bit 6).
+    master = _make_tournament(
+        pokerok,
+        periodicity=daily,
+        starting_time=datetime(2026, 5, 4, 19, 0, tzinfo=UTC),
+        late_reg_at=datetime(2026, 5, 4, 20, 0, tzinfo=UTC),
+        weekdays=0b0111111,
+    )
+    regenerate_series(master)
+    children = Tournament.objects.filter(series_master=master)
+    # Every child's weekday must be in Mon..Sat (0..5), never Sunday (6).
+    weekdays_seen = {c.starting_time.weekday() for c in children}
+    assert 6 not in weekdays_seen
+    # And the count drops by the number of Sundays in the horizon window.
+    horizon_dates = [master.starting_time + timedelta(days=d) for d in range(1, HORIZON_DAYS + 1)]
+    expected = sum(1 for d in horizon_dates if d.weekday() != 6)
+    assert children.count() == expected
+
+
+@pytest.mark.django_db
+def test_admin_form_rejects_starting_time_on_disallowed_weekday(pokerok):
+    from apps.tournaments.forms import TournamentAdminForm
+
+    daily = Periodicity.objects.get(name="every_24_hours")
+    # 2026-05-03 is a Sunday. Submitting the daily series with Sunday
+    # unchecked must fail validation on the `weekdays` field.
+    form = TournamentAdminForm(
+        data={
+            "room": str(pokerok.pk),
+            "name": "Sunday Daily",
+            "game_type": GameType.NLHE,
+            "buy_in_without_rake": "10.00",
+            "rake": "1.00",
+            "guaranteed_dollars": "100",
+            "payout_percent": "15",
+            "starting_stack": "10000",
+            "starting_stack_bb": "50",
+            "timezone": "UTC",
+            "late_registration_available": "on",
+            "starting_time_0": "03.05.2026",
+            "starting_time_1": "20:00",
+            "late_reg_at_0": "03.05.2026",
+            "late_reg_at_1": "20:30",
+            "late_reg_level": "12",
+            "blind_interval_minutes": "10",
+            "break_minutes": "5",
+            "players_per_table": "9",
+            "players_at_final_table": "9",
+            "min_players": "2",
+            "max_players": "1000",
+            "re_entry": str(ReEntryOption.objects.get(name="unlimited").pk),
+            "bubble": str(BubbleOption.objects.get(name="finalized_when_registration_closes").pk),
+            "periodicity": str(daily.pk),
+            "weekdays": ["0", "1", "2", "3", "4", "5"],  # Sunday unchecked
+            "early_bird": "",
+            "early_bird_type": str(EarlyBirdType.objects.get(name="compensated_at_bubble").pk),
+            "featured_final_table": "",
+        }
+    )
+    assert not form.is_valid()
+    assert "weekdays" in form.errors
+
+
+@pytest.mark.django_db
+def test_admin_form_rejects_empty_weekdays(pokerok):
+    from apps.tournaments.forms import TournamentAdminForm
+
+    form = TournamentAdminForm(
+        data={
+            "room": str(pokerok.pk),
+            "name": "Empty Mask",
+            "game_type": GameType.NLHE,
+            "buy_in_without_rake": "10.00",
+            "rake": "1.00",
+            "guaranteed_dollars": "100",
+            "payout_percent": "15",
+            "starting_stack": "10000",
+            "starting_stack_bb": "50",
+            "timezone": "UTC",
+            "late_registration_available": "on",
+            "starting_time_0": "01.05.2026",
+            "starting_time_1": "20:00",
+            "late_reg_at_0": "01.05.2026",
+            "late_reg_at_1": "20:30",
+            "late_reg_level": "12",
+            "blind_interval_minutes": "10",
+            "break_minutes": "5",
+            "players_per_table": "9",
+            "players_at_final_table": "9",
+            "min_players": "2",
+            "max_players": "1000",
+            "re_entry": str(ReEntryOption.objects.get(name="unlimited").pk),
+            "bubble": str(BubbleOption.objects.get(name="finalized_when_registration_closes").pk),
+            "periodicity": str(Periodicity.objects.get(name="one_off").pk),
+            "weekdays": [],
+            "early_bird": "",
+            "early_bird_type": str(EarlyBirdType.objects.get(name="compensated_at_bubble").pk),
+            "featured_final_table": "",
+        }
+    )
+    assert not form.is_valid()
+    assert "weekdays" in form.errors
+
+
+@pytest.mark.django_db
+def test_one_off_ignores_weekdays_mask(pokerok):
+    # A one-off has interval_seconds=0 → regenerate_series is a no-op
+    # before weekday filtering runs, so any mask is benign.
+    master = _make_tournament(pokerok, weekdays=0b0000001)  # Monday only
+    regenerate_series(master)
+    assert Tournament.objects.filter(series_master=master).count() == 0

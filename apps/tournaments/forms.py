@@ -28,6 +28,45 @@ _GREY_READONLY = {
 }
 
 
+_WEEKDAY_CHOICES = (
+    (0, _("Mon")),
+    (1, _("Tue")),
+    (2, _("Wed")),
+    (3, _("Thu")),
+    (4, _("Fri")),
+    (5, _("Sat")),
+    (6, _("Sun")),
+)
+
+
+class WeekdaysBitmaskField(forms.MultipleChoiceField):
+    """Renders the 7-bit `Tournament.weekdays` mask as Mon..Sun checkboxes.
+
+    Model holds an int (bit i = Python weekday i, Mon=0..Sun=6); form
+    presents it as a list of selected ints and packs back to int on clean.
+    """
+
+    widget = forms.CheckboxSelectMultiple
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("choices", _WEEKDAY_CHOICES)
+        super().__init__(**kwargs)
+
+    def prepare_value(self, value):
+        if isinstance(value, int):
+            return [str(i) for i in range(7) if value & (1 << i)]
+        return super().prepare_value(value)
+
+    def clean(self, value):
+        picked = super().clean(value)
+        if not picked:
+            raise forms.ValidationError(_("Pick at least one weekday."))
+        mask = 0
+        for raw in picked:
+            mask |= 1 << int(raw)
+        return mask
+
+
 class _TournamentDateWidget(BaseAdminDateWidget):
     """`dd.mm.yyyy` date input that still pulls in admin calendar JS.
 
@@ -176,6 +215,7 @@ class TournamentAdminForm(forms.ModelForm):
         widget=forms.TextInput(attrs={**_GREY_READONLY, "data-tnmt-duration": "1"}),
         help_text=_("Auto-computed from late registration time minus starting time."),
     )
+    weekdays = WeekdaysBitmaskField(label=_("Active weekdays"), required=True)
 
     class Media:
         js = (
@@ -185,6 +225,7 @@ class TournamentAdminForm(forms.ModelForm):
             "admin/js/early_bird_toggle.js",
             "admin/js/time_fieldset.js",
             "admin/js/blind_levels_autonumber.js",
+            "admin/js/weekdays_presets.js",
         )
         css = {"all": ("admin/css/tournament_form.css",)}
 
@@ -214,6 +255,7 @@ class TournamentAdminForm(forms.ModelForm):
             "re_entry",
             "bubble",
             "periodicity",
+            "weekdays",
             "early_bird",
             "early_bird_type",
             "featured_final_table",
@@ -296,6 +338,23 @@ class TournamentAdminForm(forms.ModelForm):
                     "late_reg_at",
                     _("Late registration cannot close before the tournament starts."),
                 )
+
+        # For recurring tournaments, the master itself must sit on an
+        # allowed weekday — otherwise the generator would loop past the
+        # master's own start time looking for a valid day.
+        periodicity = cleaned.get("periodicity")
+        weekdays_mask = cleaned.get("weekdays")
+        if (
+            starts is not None
+            and weekdays_mask
+            and periodicity is not None
+            and periodicity.interval_seconds > 0
+            and not (weekdays_mask & (1 << starts.weekday()))
+        ):
+            self.add_error(
+                "weekdays",
+                _("Starting time falls on a weekday that isn't selected."),
+            )
         return cleaned
 
     def save(self, commit=True):

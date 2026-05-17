@@ -113,7 +113,7 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         ),
         (
             _("Recurrence"),
-            {"fields": ("periodicity", "series_master")},
+            {"fields": ("periodicity", "weekdays", "series_master")},
         ),
         (
             _("Features"),
