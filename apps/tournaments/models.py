@@ -201,6 +201,17 @@ class Tournament(models.Model):
         related_name="tournaments",
         verbose_name=_("periodicity"),
     )
+    # 7-bit weekday mask: bit i == Python `date.weekday()` value
+    # (Mon=0 ... Sun=6). 127 = all days. Used by the recurrence generator
+    # to skip child occurrences that fall on a disallowed weekday; ignored
+    # for one-off tournaments.
+    weekdays = models.PositiveSmallIntegerField(
+        _("active weekdays"),
+        default=0b1111111,
+        help_text=_(
+            "Days of the week the tournament runs on. Ignored when periodicity is one-off."
+        ),
+    )
     series_master = models.ForeignKey(
         "self",
         on_delete=models.CASCADE,

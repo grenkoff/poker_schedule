@@ -8,7 +8,7 @@ from django.utils.translation import gettext_lazy as _
 from apps.users.admin_mixins import StaffAdminMixin
 
 from .columns import ALL_COLUMNS, Column
-from .forms import BlindStructureInlineForm, TournamentAdminForm
+from .forms import BlindStructureInlineForm, PeriodicityWidget, TournamentAdminForm
 from .models import (
     BlindStructure,
     BubbleOption,
@@ -113,7 +113,7 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         ),
         (
             _("Recurrence"),
-            {"fields": ("periodicity", "series_master")},
+            {"fields": ("periodicity", "weekdays", "series_master")},
         ),
         (
             _("Features"),
@@ -123,6 +123,17 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
 
     def get_readonly_fields(self, request, obj=None):
         return ("series_master",)
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        # Custom Periodicity widget tags each <option> with
+        # data-interval-seconds so the weekday JS can enable/disable
+        # the Active-weekdays checkboxes based on the selection.
+        # Must go through this hook (not the form's __init__) so that
+        # admin's RelatedFieldWidgetWrapper still wraps our widget
+        # afterwards, preserving the +/edit icons and the choices.
+        if db_field.name == "periodicity":
+            kwargs.setdefault("widget", PeriodicityWidget())
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
     def get_queryset(self, request):
         self._extend_recurring_series()

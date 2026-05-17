@@ -26,6 +26,13 @@ from django.utils import timezone
 HORIZON_DAYS = 30
 
 
+def _allowed_weekdays(mask: int) -> set[int]:
+    """Unpack the 7-bit weekday mask. Empty mask is treated as "all days"
+    so legacy or corrupted data doesn't stall the generator."""
+    days = {i for i in range(7) if mask & (1 << i)}
+    return days or set(range(7))
+
+
 def _build_child(master, next_start: datetime, late_reg_offset: timedelta):
     from .models import Tournament
 
@@ -53,6 +60,7 @@ def _build_child(master, next_start: datetime, late_reg_offset: timedelta):
         re_entry=master.re_entry,
         bubble=master.bubble,
         periodicity=master.periodicity,
+        weekdays=master.weekdays,
         series_master=master,
         early_bird=master.early_bird,
         early_bird_type=master.early_bird_type,
@@ -91,12 +99,14 @@ def regenerate_series(master) -> None:
     horizon = master.starting_time + timedelta(days=HORIZON_DAYS)
     late_reg_offset = master.late_reg_at - master.starting_time
     blind_levels = list(master.blind_levels.all())
+    allowed = _allowed_weekdays(master.weekdays)
 
     next_start = master.starting_time + delta
     while next_start <= horizon:
-        child = _build_child(master, next_start, late_reg_offset)
-        child.save()
-        _copy_blind_levels(child, blind_levels)
+        if next_start.weekday() in allowed:
+            child = _build_child(master, next_start, late_reg_offset)
+            child.save()
+            _copy_blind_levels(child, blind_levels)
         next_start += delta
 
 
@@ -140,12 +150,14 @@ def extend_series_to_horizon(master, *, now: datetime | None = None) -> int:
 
     late_reg_offset = master.late_reg_at - master.starting_time
     blind_levels = list(master.blind_levels.all())
+    allowed = _allowed_weekdays(master.weekdays)
 
     created = 0
     while next_start <= horizon:
-        child = _build_child(master, next_start, late_reg_offset)
-        child.save()
-        _copy_blind_levels(child, blind_levels)
-        created += 1
+        if next_start.weekday() in allowed:
+            child = _build_child(master, next_start, late_reg_offset)
+            child.save()
+            _copy_blind_levels(child, blind_levels)
+            created += 1
         next_start += delta
     return created

@@ -28,6 +28,78 @@ _GREY_READONLY = {
 }
 
 
+_WEEKDAY_CHOICES = (
+    (0, _("Mon")),
+    (1, _("Tue")),
+    (2, _("Wed")),
+    (3, _("Thu")),
+    (4, _("Fri")),
+    (5, _("Sat")),
+    (6, _("Sun")),
+)
+
+
+class WeekdaysBitmaskField(forms.MultipleChoiceField):
+    """Renders the 7-bit `Tournament.weekdays` mask as Mon..Sun checkboxes.
+
+    Model holds an int (bit i = Python weekday i, Mon=0..Sun=6); form
+    presents it as a list of selected ints and packs back to int on clean.
+    Empty submissions are returned as 0 so the cross-field clean() in
+    `TournamentAdminForm` can decide whether that's acceptable (one-off)
+    or not (recurring).
+    """
+
+    widget = forms.CheckboxSelectMultiple
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("choices", _WEEKDAY_CHOICES)
+        kwargs.setdefault("required", False)
+        kwargs.setdefault("initial", 0b1111111)
+        super().__init__(**kwargs)
+
+    def prepare_value(self, value):
+        if isinstance(value, int):
+            return [str(i) for i in range(7) if value & (1 << i)]
+        return super().prepare_value(value)
+
+    def clean(self, value):
+        picked = super().clean(value)
+        mask = 0
+        for raw in picked:
+            mask |= 1 << int(raw)
+        return mask
+
+
+class PeriodicityWidget(forms.Select):
+    """Stock Select that tags each <option> with data-interval-seconds.
+
+    The Tournament admin form's weekday JS reads this attribute off the
+    currently-selected option to decide whether the weekday checkboxes
+    should be enabled (recurring) or disabled (one-off / no selection).
+    """
+
+    def __init__(self, attrs=None):
+        merged = {"data-tnmt-periodicity": "1", **(attrs or {})}
+        super().__init__(attrs=merged)
+        self._interval_map: dict[int, int] | None = None
+
+    def _intervals(self) -> dict[int, int]:
+        if self._interval_map is None:
+            from .models import Periodicity
+
+            self._interval_map = dict(Periodicity.objects.values_list("pk", "interval_seconds"))
+        return self._interval_map
+
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex, attrs)
+        pk = getattr(value, "value", value)
+        if pk not in (None, ""):
+            interval = self._intervals().get(int(pk))
+            if interval is not None:
+                option["attrs"]["data-interval-seconds"] = str(interval)
+        return option
+
+
 class _TournamentDateWidget(BaseAdminDateWidget):
     """`dd.mm.yyyy` date input that still pulls in admin calendar JS.
 
@@ -176,6 +248,7 @@ class TournamentAdminForm(forms.ModelForm):
         widget=forms.TextInput(attrs={**_GREY_READONLY, "data-tnmt-duration": "1"}),
         help_text=_("Auto-computed from late registration time minus starting time."),
     )
+    weekdays = WeekdaysBitmaskField(label=_("Active weekdays"))
 
     class Media:
         js = (
@@ -185,6 +258,7 @@ class TournamentAdminForm(forms.ModelForm):
             "admin/js/early_bird_toggle.js",
             "admin/js/time_fieldset.js",
             "admin/js/blind_levels_autonumber.js",
+            "admin/js/weekdays_presets.js",
         )
         css = {"all": ("admin/css/tournament_form.css",)}
 
@@ -214,6 +288,7 @@ class TournamentAdminForm(forms.ModelForm):
             "re_entry",
             "bubble",
             "periodicity",
+            "weekdays",
             "early_bird",
             "early_bird_type",
             "featured_final_table",
@@ -295,6 +370,25 @@ class TournamentAdminForm(forms.ModelForm):
                 self.add_error(
                     "late_reg_at",
                     _("Late registration cannot close before the tournament starts."),
+                )
+
+        # Weekday handling. The field is rendered as disabled checkboxes
+        # whenever the periodicity is unset or one-off, so the POST may
+        # be empty in those cases — substitute the all-days default so
+        # the model has a sensible value either way. For recurring
+        # periodicities the editor must actively pick at least one day
+        # AND the master's own starting weekday must be in the set.
+        periodicity = cleaned.get("periodicity")
+        weekdays_mask = cleaned.get("weekdays") or 0
+        if periodicity is None or periodicity.interval_seconds == 0:
+            cleaned["weekdays"] = 0b1111111
+        else:
+            if weekdays_mask == 0:
+                self.add_error("weekdays", _("Pick at least one weekday."))
+            elif starts is not None and not (weekdays_mask & (1 << starts.weekday())):
+                self.add_error(
+                    "weekdays",
+                    _("Starting time falls on a weekday that isn't selected."),
                 )
         return cleaned
 
