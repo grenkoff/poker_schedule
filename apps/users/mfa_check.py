@@ -38,13 +38,11 @@ def should_nag(request: HttpRequest) -> bool:
         return False
     if request.session.get(SESSION_FLAG):
         return False
-    # Skip for HTMX partials, AJAX, and the auth/setup paths themselves
-    # so the user can land on the MFA page without being interrupted.
-    if request.headers.get("HX-Request") == "true":
+    # Only nag inside Django admin — the banner is a staff-facing prompt,
+    # the public tournament list shouldn't surface it.
+    if not request.path.startswith("/admin/"):
         return False
-    # Skip on auth/MFA setup paths so the user can navigate there without
-    # the banner repeating.
-    if "/accounts/" in request.path:
+    if request.headers.get("HX-Request") == "true":
         return False
     if request.method != "GET":
         return False
