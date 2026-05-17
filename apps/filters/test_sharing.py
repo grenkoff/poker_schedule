@@ -20,6 +20,7 @@ from apps.tournaments.models import (
     Periodicity,
     ReEntryOption,
     Tournament,
+    TournamentSeries,
 )
 
 User = get_user_model()
@@ -45,8 +46,12 @@ def _make_tournament(
     **extras,
 ) -> Tournament:
     starting_time = starting_time or (datetime.now(UTC) + timedelta(hours=2))
+    series, _ = TournamentSeries.objects.get_or_create(
+        room=room, slug="default", defaults={"name": "Default"}
+    )
     defaults = {
         "room": room,
+        "series": series,
         "name": name,
         "game_type": game_type,
         "buy_in_total": buy_in_total,

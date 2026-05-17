@@ -18,6 +18,7 @@ from apps.tournaments.models import (
     Periodicity,
     ReEntryOption,
     Tournament,
+    TournamentSeries,
 )
 
 User = get_user_model()
@@ -67,8 +68,12 @@ def test_unregistered_admin_pages_are_404(admin_client, url):
 @pytest.fixture
 def tournament_with_children() -> Tournament:
     room = PokerRoom.objects.get(slug="pokerok")
+    series, _ = TournamentSeries.objects.get_or_create(
+        room=room, slug="default", defaults={"name": "Default"}
+    )
     tournament = Tournament.objects.create(
         room=room,
+        series=series,
         name="Admin Test Daily",
         game_type=GameType.NLHE,
         buy_in_total=Decimal("55.00"),
@@ -106,8 +111,12 @@ def test_tournament_change_page_renders(admin_client, tournament_with_children):
 
 
 def _make_tournament(room: PokerRoom, **overrides) -> Tournament:
+    series, _ = TournamentSeries.objects.get_or_create(
+        room=room, slug="default", defaults={"name": "Default"}
+    )
     defaults = {
         "room": room,
+        "series": series,
         "name": "Tournament",
         "game_type": GameType.NLHE,
         "buy_in_total": Decimal("11.00"),

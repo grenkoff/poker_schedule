@@ -65,6 +65,19 @@ def _with_unit(rendered: str, *, prefix: str = "", suffix: str = "") -> str:
     return f"{prefix}{rendered}{suffix}"
 
 
+def _fmt_series(series) -> str | SafeString:
+    """`<img> name` if the series has an image, otherwise just the name."""
+    if series is None:
+        return "—"
+    if series.image:
+        return format_html(
+            '<img src="{}" alt="" class="tnmt-series-icon"> {}',
+            series.image.url,
+            series.name,
+        )
+    return series.name
+
+
 ALL_COLUMNS: tuple[Column, ...] = (
     Column(
         "name",
@@ -75,6 +88,13 @@ ALL_COLUMNS: tuple[Column, ...] = (
         pinned=True,
     ),
     Column("room", _("Room"), lambda t: t.room.name, sort_key="room", db_field="room__name"),
+    Column(
+        "series",
+        _("Series"),
+        lambda t: _fmt_series(t.series if t.series_id else None),
+        sort_key="series",
+        db_field="series__sort_order",
+    ),
     Column(
         "game_type",
         _("Game"),

@@ -8,14 +8,21 @@ from django.utils.translation import gettext_lazy as _
 from apps.users.admin_mixins import StaffAdminMixin
 
 from .columns import ALL_COLUMNS, Column
-from .forms import BlindStructureInlineForm, PeriodicityWidget, TournamentAdminForm
+from .forms import (
+    BlindStructureInlineForm,
+    PeriodicityWidget,
+    TournamentAdminForm,
+    TournamentSeriesWidget,
+)
 from .models import (
     BlindStructure,
     BubbleOption,
+    DealMakingOption,
     EarlyBirdType,
     Periodicity,
     ReEntryOption,
     Tournament,
+    TournamentSeries,
 )
 from .recurrence import extend_series_to_horizon, regenerate_series
 
@@ -59,6 +66,7 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     class Media:
         js = (
             "admin/js/changelist_columns.js",
+            "admin/js/series_filter.js",
             "js/localize_times.js",
             "js/sticky_hscroll.js",
             "js/sticky_thead.js",
@@ -66,16 +74,15 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         css = {"all": ("admin/css/changelist_columns.css",)}
 
     list_display = tuple(f"col_{c.key}" for c in ALL_COLUMNS)
-    list_select_related = ("room", "re_entry")
+    list_select_related = ("room", "re_entry", "series")
     list_per_page = 100
     list_filter = ()
     search_fields = ("name", "room__name")
-    autocomplete_fields = ("room",)
     inlines = (BlindStructureInline,)
     actions = ("mark_verified", "unmark_verified")
 
     fieldsets = (
-        (None, {"fields": ("room", "name", "game_type")}),
+        (None, {"fields": ("room", "series", "name", "game_type")}),
         (
             _("Buy-in (with rake = without rake + rake; auto-computed)"),
             {"fields": ("buy_in_without_rake", "rake", "rake_percent", "buy_in_total")},
@@ -117,7 +124,14 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         ),
         (
             _("Features"),
-            {"fields": ("early_bird", "early_bird_type", "featured_final_table")},
+            {
+                "fields": (
+                    "early_bird",
+                    "early_bird_type",
+                    "featured_final_table",
+                    "deal_making",
+                ),
+            },
         ),
     )
 
@@ -137,15 +151,33 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         return fieldsets
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        # Custom Periodicity widget tags each <option> with
-        # data-interval-seconds so the weekday JS can enable/disable
-        # the Active-weekdays checkboxes based on the selection.
-        # Must go through this hook (not the form's __init__) so that
-        # admin's RelatedFieldWidgetWrapper still wraps our widget
-        # afterwards, preserving the +/edit icons and the choices.
+        # Custom widgets are wired here (rather than in the form's
+        # __init__) so admin's RelatedFieldWidgetWrapper still wraps
+        # them afterwards, preserving the +/edit icons and the choices
+        # populated by ModelChoiceField.
         if db_field.name == "periodicity":
             kwargs.setdefault("widget", PeriodicityWidget())
-        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+        elif db_field.name == "series":
+            kwargs.setdefault("widget", TournamentSeriesWidget())
+            # Exclude the legacy "Default" series so editors don't pick it.
+            # It exists only to satisfy the NOT NULL constraint for rows
+            # that existed before per-room series were curated.
+            kwargs.setdefault(
+                "queryset",
+                TournamentSeries.objects.exclude(slug="default").select_related("room"),
+            )
+        formfield = super().formfield_for_foreignkey(db_field, request, **kwargs)
+        if db_field.name == "series" and formfield is not None:
+            # Drop the room prefix from each option label — the room is
+            # already shown in its own field above. The Room-filter JS
+            # uses data-room-id, not the label, so this is purely visual.
+            formfield.label_from_instance = lambda obj: obj.name
+        if db_field.name == "room" and formfield is not None:
+            # Default Select (no autocomplete) — ensure the blank option
+            # is present so the user can clear the selection and the
+            # series field defaults to disabled on a fresh /add/.
+            formfield.empty_label = "---------"
+        return formfield
 
     def get_queryset(self, request):
         self._extend_recurring_series()
@@ -252,7 +284,25 @@ class EarlyBirdTypeAdmin(_OptionAdmin):
     pass
 
 
+@admin.register(DealMakingOption)
+class DealMakingOptionAdmin(_OptionAdmin):
+    pass
+
+
 @admin.register(Periodicity)
 class PeriodicityAdmin(_OptionAdmin):
     list_display = ("label", "name", "interval_seconds", "sort_order")  # type: ignore[assignment]
     fields = ("label", "name", "interval_seconds", "sort_order")
+
+
+@admin.register(TournamentSeries)
+class TournamentSeriesAdmin(StaffAdminMixin, admin.ModelAdmin):
+    list_display = ("name", "room", "slug", "sort_order")
+    list_filter = ("room",)
+    list_editable = ("sort_order",)
+    list_select_related = ("room",)
+    search_fields = ("name", "room__name")
+    prepopulated_fields = {"slug": ("name",)}
+    autocomplete_fields = ("room",)
+    ordering = ("room__name", "sort_order", "name")
+    fields = ("room", "name", "slug", "image", "sort_order")

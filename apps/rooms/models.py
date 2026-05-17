@@ -40,6 +40,7 @@ class PokerRoom(models.Model):
         verbose_name=_("network"),
     )
     website = models.URLField(_("website"), blank=True)
+    image = models.ImageField(_("image"), upload_to="rooms/", blank=True)
     is_active = models.BooleanField(
         _("active"),
         default=True,

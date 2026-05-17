@@ -197,3 +197,13 @@ input.tnmt-date-trigger:disabled,
     pointer-events: none;
     text-decoration: none;
 }
+
+/* Late-reg calendar: days strictly before starting_time are inert
+ * (cursor + pointer-events handle the rejection — no JS click intercept
+ * needed). Greyed colour matches Django's "today is the past" feel. */
+.calendarbox td > a.tnmt-day-disabled {
+    color: #c5c5c5;
+    pointer-events: none;
+    cursor: not-allowed;
+    background: transparent !important;
+}

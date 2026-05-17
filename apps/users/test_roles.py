@@ -21,6 +21,7 @@ from apps.tournaments.models import (
     Periodicity,
     ReEntryOption,
     Tournament,
+    TournamentSeries,
 )
 from apps.users.models import Role
 
@@ -39,8 +40,12 @@ def pokerok() -> PokerRoom:
 
 def _make_tournament(room: PokerRoom, **extras) -> Tournament:
     starting_time = datetime.now(UTC) + timedelta(hours=2)
+    series, _ = TournamentSeries.objects.get_or_create(
+        room=room, slug="default", defaults={"name": "Default"}
+    )
     defaults = {
         "room": room,
+        "series": series,
         "name": "Test",
         "game_type": GameType.NLHE,
         "buy_in_total": Decimal("11.00"),

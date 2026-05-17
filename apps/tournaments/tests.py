@@ -15,6 +15,7 @@ from apps.tournaments.models import (
     Periodicity,
     ReEntryOption,
     Tournament,
+    TournamentSeries,
 )
 from apps.tournaments.recurrence import (
     HORIZON_DAYS,
@@ -28,9 +29,17 @@ def pokerok() -> PokerRoom:
     return PokerRoom.objects.get(slug="pokerok")
 
 
+def _default_series(room: PokerRoom) -> TournamentSeries:
+    series, _ = TournamentSeries.objects.get_or_create(
+        room=room, slug="default", defaults={"name": "Default"}
+    )
+    return series
+
+
 def _make_tournament(room: PokerRoom, **overrides) -> Tournament:
     defaults = {
         "room": room,
+        "series": _default_series(room),
         "name": "Test Tournament",
         "game_type": GameType.NLHE,
         "buy_in_total": Decimal("11.00"),
@@ -98,6 +107,7 @@ def test_admin_form_rejects_late_reg_before_start(pokerok):
     form = TournamentAdminForm(
         data={
             "room": str(pokerok.pk),
+            "series": str(_default_series(pokerok).pk),
             "name": "X",
             "game_type": GameType.NLHE,
             "buy_in_without_rake": "10.00",
@@ -139,6 +149,7 @@ def test_admin_form_pins_late_reg_to_start_when_disabled(pokerok):
     form = TournamentAdminForm(
         data={
             "room": str(pokerok.pk),
+            "series": str(_default_series(pokerok).pk),
             "name": "Z",
             "game_type": GameType.NLHE,
             "buy_in_without_rake": "10.00",
@@ -183,6 +194,7 @@ def test_admin_form_saves_timezone(pokerok):
     form = TournamentAdminForm(
         data={
             "room": str(pokerok.pk),
+            "series": str(_default_series(pokerok).pk),
             "name": "TZ Tournament",
             "game_type": GameType.NLHE,
             "buy_in_without_rake": "10.00",
@@ -441,6 +453,7 @@ def test_admin_form_rejects_starting_time_on_disallowed_weekday(pokerok):
     form = TournamentAdminForm(
         data={
             "room": str(pokerok.pk),
+            "series": str(_default_series(pokerok).pk),
             "name": "Sunday Daily",
             "game_type": GameType.NLHE,
             "buy_in_without_rake": "10.00",
@@ -483,6 +496,7 @@ def test_admin_form_rejects_empty_weekdays_for_recurring(pokerok):
     form = TournamentAdminForm(
         data={
             "room": str(pokerok.pk),
+            "series": str(_default_series(pokerok).pk),
             "name": "Empty Mask",
             "game_type": GameType.NLHE,
             "buy_in_without_rake": "10.00",
@@ -526,6 +540,7 @@ def test_admin_form_accepts_empty_weekdays_for_one_off(pokerok):
     form = TournamentAdminForm(
         data={
             "room": str(pokerok.pk),
+            "series": str(_default_series(pokerok).pk),
             "name": "One-off",
             "game_type": GameType.NLHE,
             "buy_in_without_rake": "10.00",
@@ -568,3 +583,191 @@ def test_one_off_ignores_weekdays_mask(pokerok):
     master = _make_tournament(pokerok, weekdays=0b0000001)  # Monday only
     regenerate_series(master)
     assert Tournament.objects.filter(series_master=master).count() == 0
+
+
+# --- tournament series ----------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_admin_form_rejects_series_from_different_room(pokerok):
+    from apps.tournaments.forms import TournamentAdminForm
+
+    other_room = PokerRoom.objects.exclude(pk=pokerok.pk).first()
+    assert other_room is not None
+    foreign_series = TournamentSeries.objects.create(
+        room=other_room, name="Foreign", slug="foreign"
+    )
+    form = TournamentAdminForm(
+        data={
+            "room": str(pokerok.pk),
+            "series": str(foreign_series.pk),
+            "name": "Mismatched",
+            "game_type": GameType.NLHE,
+            "buy_in_without_rake": "10.00",
+            "rake": "1.00",
+            "guaranteed_dollars": "100",
+            "payout_percent": "15",
+            "starting_stack": "10000",
+            "starting_stack_bb": "50",
+            "timezone": "UTC",
+            "late_registration_available": "on",
+            "starting_time_0": "01.05.2026",
+            "starting_time_1": "20:00",
+            "late_reg_at_0": "01.05.2026",
+            "late_reg_at_1": "20:30",
+            "late_reg_level": "12",
+            "blind_interval_minutes": "10",
+            "break_minutes": "5",
+            "players_per_table": "9",
+            "players_at_final_table": "9",
+            "min_players": "2",
+            "max_players": "1000",
+            "re_entry": str(ReEntryOption.objects.get(name="unlimited").pk),
+            "bubble": str(BubbleOption.objects.get(name="finalized_when_registration_closes").pk),
+            "periodicity": str(Periodicity.objects.get(name="one_off").pk),
+            "weekdays": ["0", "1", "2", "3", "4", "5", "6"],
+            "early_bird": "",
+            "early_bird_type": str(EarlyBirdType.objects.get(name="compensated_at_bubble").pk),
+            "featured_final_table": "",
+        }
+    )
+    assert not form.is_valid()
+    assert "series" in form.errors
+
+
+@pytest.mark.django_db
+def test_series_widget_tags_options_with_room_id(pokerok):
+    from apps.tournaments.forms import TournamentSeriesWidget
+
+    series = _default_series(pokerok)
+    widget = TournamentSeriesWidget()
+    widget.choices = [("", "---------"), (series.pk, series.name)]
+    rendered = widget.render("series", series.pk)
+    assert f'data-room-id="{pokerok.pk}"' in rendered
+
+
+@pytest.mark.django_db
+def test_recurrence_copies_series_to_children(pokerok):
+    daily = Periodicity.objects.get(name="every_24_hours")
+    master = _make_tournament(pokerok, periodicity=daily)
+    regenerate_series(master)
+    children = Tournament.objects.filter(series_master=master)
+    assert children.count() > 0
+    assert all(c.series_id == master.series_id for c in children)
+
+
+@pytest.mark.django_db
+def test_series_unique_per_room_slug(pokerok):
+    TournamentSeries.objects.create(room=pokerok, name="X", slug="x")
+    with pytest.raises(IntegrityError):
+        TournamentSeries.objects.create(room=pokerok, name="X Two", slug="x")
+
+
+@pytest.mark.django_db
+def test_series_slug_can_repeat_across_rooms(pokerok):
+    other = PokerRoom.objects.exclude(pk=pokerok.pk).first()
+    assert other is not None
+    a = TournamentSeries.objects.create(room=pokerok, name="Daily", slug="daily")
+    b = TournamentSeries.objects.create(room=other, name="Daily", slug="daily")
+    assert a.pk != b.pk
+
+
+@pytest.mark.django_db
+def test_pokerok_series_seeded_by_migration(pokerok):
+    """Migration 0020 should have populated the 24 known Pokerok series."""
+    seeded = TournamentSeries.objects.filter(room=pokerok).exclude(slug="default")
+    names = set(seeded.values_list("name", flat=True))
+    assert {"WSOP Online", "GGMasters", "Daily Guarantees"}.issubset(names)
+    assert seeded.count() == 24
+
+
+@pytest.mark.django_db
+def test_series_column_renders_name_without_image(pokerok):
+    from apps.tournaments.columns import _fmt_series
+
+    series = TournamentSeries.objects.filter(room=pokerok, slug="wsop-online").first()
+    assert series is not None
+    assert _fmt_series(series) == "WSOP Online"
+
+
+def test_series_column_renders_dash_for_none():
+    from apps.tournaments.columns import _fmt_series
+
+    assert _fmt_series(None) == "—"
+
+
+@pytest.mark.django_db
+def test_series_column_appears_in_all_columns():
+    from apps.tournaments.columns import ALL_COLUMNS, PUBLIC_COLUMNS
+
+    assert any(c.key == "series" for c in ALL_COLUMNS)
+    # Series shown on the public list too (not admin_only).
+    assert any(c.key == "series" for c in PUBLIC_COLUMNS)
+
+
+def test_weekdays_has_changed_accepts_int_initial():
+    """Regression: admin's add_view calls `form.changed_data` which routes
+    to `MultipleChoiceField.has_changed`, and that one calls len() on the
+    initial value. Our field stores the model bitmask as an int — make
+    sure has_changed normalizes it instead of raising TypeError."""
+    from apps.tournaments.forms import WeekdaysBitmaskField
+
+    field = WeekdaysBitmaskField()
+    # Mixed scenarios: int matching the submission, int differing, and
+    # the None default should all be handled without raising.
+    assert field.has_changed(0b1111111, ["0", "1", "2", "3", "4", "5", "6"]) is False
+    assert field.has_changed(0b0000001, ["0", "1"]) is True
+    assert field.has_changed(None, ["0"]) is True
+
+
+@pytest.mark.django_db
+def test_admin_form_interprets_starting_time_in_picked_timezone(pokerok):
+    """The `timezone` form field — not the request's active TZ — decides
+    how the wall-clock starting_time is interpreted. Picking Asia/Almaty
+    (+5) at 03:28 must persist as 22:28 UTC of the previous day."""
+    from zoneinfo import ZoneInfo
+
+    from apps.tournaments.forms import TournamentAdminForm
+
+    form = TournamentAdminForm(
+        data={
+            "room": str(pokerok.pk),
+            "series": str(_default_series(pokerok).pk),
+            "name": "Almaty Event",
+            "game_type": GameType.NLHE,
+            "buy_in_without_rake": "10.00",
+            "rake": "1.00",
+            "guaranteed_dollars": "100",
+            "payout_percent": "15",
+            "starting_stack": "10000",
+            "starting_stack_bb": "50",
+            "timezone": "Asia/Almaty",
+            "late_registration_available": "on",
+            "starting_time_0": "18.05.2026",
+            "starting_time_1": "03:28",
+            "late_reg_at_0": "18.05.2026",
+            "late_reg_at_1": "03:28",
+            "late_reg_level": "12",
+            "blind_interval_minutes": "10",
+            "break_minutes": "5",
+            "players_per_table": "9",
+            "players_at_final_table": "9",
+            "min_players": "2",
+            "max_players": "1000",
+            "re_entry": str(ReEntryOption.objects.get(name="unlimited").pk),
+            "bubble": str(BubbleOption.objects.get(name="finalized_when_registration_closes").pk),
+            "periodicity": str(Periodicity.objects.get(name="one_off").pk),
+            "weekdays": ["0", "1", "2", "3", "4", "5", "6"],
+            "early_bird": "",
+            "early_bird_type": str(EarlyBirdType.objects.get(name="compensated_at_bubble").pk),
+            "featured_final_table": "",
+        }
+    )
+    assert form.is_valid(), form.errors
+    saved = form.save()
+    expected = datetime(2026, 5, 17, 22, 28, tzinfo=UTC)
+    assert saved.starting_time == expected
+    assert saved.late_reg_at == expected
+    # Cross-check: viewing the stored aware datetime in Almaty restores
+    # the original wall-clock value.
+    assert saved.starting_time.astimezone(ZoneInfo("Asia/Almaty")).hour == 3

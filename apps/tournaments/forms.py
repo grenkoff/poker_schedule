@@ -17,6 +17,7 @@ from django.contrib.admin.widgets import (
     BaseAdminDateWidget,
     BaseAdminTimeWidget,
 )
+from django.utils import timezone as djtz
 from django.utils.translation import gettext_lazy as _
 
 from .models import BlindStructure, Tournament
@@ -69,6 +70,14 @@ class WeekdaysBitmaskField(forms.MultipleChoiceField):
             mask |= 1 << int(raw)
         return mask
 
+    def has_changed(self, initial, data):
+        # Django's MultipleChoiceField.has_changed calls len() on initial,
+        # but our model stores a bitmask int — expand it to the list shape
+        # the parent expects.
+        if isinstance(initial, int):
+            initial = self.prepare_value(initial)
+        return super().has_changed(initial, data)
+
 
 class PeriodicityWidget(forms.Select):
     """Stock Select that tags each <option> with data-interval-seconds.
@@ -97,6 +106,36 @@ class PeriodicityWidget(forms.Select):
             interval = self._intervals().get(int(pk))
             if interval is not None:
                 option["attrs"]["data-interval-seconds"] = str(interval)
+        return option
+
+
+class TournamentSeriesWidget(forms.Select):
+    """Series Select tagged with data-room-id on each <option>.
+
+    The Tournament admin form lists every series across every room;
+    `series_filter.js` reads `data-room-id` and hides options whose
+    room doesn't match the currently-selected Room.
+    """
+
+    def __init__(self, attrs=None):
+        merged = {"data-tnmt-series": "1", **(attrs or {})}
+        super().__init__(attrs=merged)
+        self._room_map: dict[int, int] | None = None
+
+    def _rooms(self) -> dict[int, int]:
+        if self._room_map is None:
+            from .models import TournamentSeries
+
+            self._room_map = dict(TournamentSeries.objects.values_list("pk", "room_id"))
+        return self._room_map
+
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex, attrs)
+        pk = getattr(value, "value", value)
+        if pk not in (None, ""):
+            room_id = self._rooms().get(int(pk))
+            if room_id is not None:
+                option["attrs"]["data-room-id"] = str(room_id)
         return option
 
 
@@ -268,6 +307,7 @@ class TournamentAdminForm(forms.ModelForm):
         # (handled by the proxy Decimal fields above + clean()).
         fields = (
             "room",
+            "series",
             "name",
             "game_type",
             "guaranteed_dollars",
@@ -292,6 +332,7 @@ class TournamentAdminForm(forms.ModelForm):
             "early_bird",
             "early_bird_type",
             "featured_final_table",
+            "deal_making",
         )
 
     def __init__(self, *args, **kwargs):
@@ -315,7 +356,7 @@ class TournamentAdminForm(forms.ModelForm):
                 self.fields[name].widget.attrs["max"] = "10"
         for name in ("min_players", "max_players"):
             if name in self.fields:
-                self.fields[name].widget.attrs["min"] = "2"
+                self.fields[name].widget.attrs["min"] = "1"
         if self.instance and self.instance.pk:
             self.fields["buy_in_total"].initial = self.instance.buy_in_total
             self.fields["buy_in_without_rake"].initial = self.instance.buy_in_without_rake
@@ -323,6 +364,22 @@ class TournamentAdminForm(forms.ModelForm):
             if self.instance.buy_in_total:
                 pct = self.instance.rake * Decimal(100) / self.instance.buy_in_total
                 self.fields["rake_percent"].initial = f"{pct:.2f}"
+            # Display starting_time / late_reg_at in the tournament's own
+            # timezone (the value the editor originally typed), not in
+            # whatever the active request TZ happens to be. We strip
+            # tzinfo so the SplitDateTime widget renders the components
+            # directly without re-converting.
+            instance_tz = self.instance.timezone
+            if instance_tz:
+                try:
+                    tz = zoneinfo.ZoneInfo(instance_tz)
+                except zoneinfo.ZoneInfoNotFoundError:
+                    tz = None
+                if tz is not None:
+                    for fname in ("starting_time", "late_reg_at"):
+                        val = getattr(self.instance, fname, None)
+                        if val and djtz.is_aware(val):
+                            self.initial[fname] = val.astimezone(tz).replace(tzinfo=None)
 
         # Late-reg fields are conditionally required: the checkbox state
         # decides. On a bound submission with the checkbox unchecked, the
@@ -338,6 +395,36 @@ class TournamentAdminForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
+
+        # Interpret the wall-clock datetimes the editor typed as living
+        # in the timezone they picked above, NOT in the request's active
+        # TZ (which is the logged-in admin's profile TZ — unrelated to
+        # the tournament's local time). SplitDateTimeField has already
+        # run `from_current_timezone` and made the value aware, but the
+        # wall-clock components match what the editor typed, so we strip
+        # tzinfo and re-anchor in the picked zone.
+        tz_name = cleaned.get("timezone")
+        if tz_name:
+            try:
+                tz = zoneinfo.ZoneInfo(tz_name)
+            except zoneinfo.ZoneInfoNotFoundError:
+                tz = None
+            if tz is not None:
+                for fname in ("starting_time", "late_reg_at"):
+                    val = cleaned.get(fname)
+                    if val:
+                        wallclock = val.replace(tzinfo=None) if djtz.is_aware(val) else val
+                        cleaned[fname] = djtz.make_aware(wallclock, tz)
+
+        # Series must belong to the same room as the tournament.
+        room = cleaned.get("room")
+        series = cleaned.get("series")
+        if room is not None and series is not None and series.room_id != room.pk:
+            self.add_error(
+                "series",
+                _("Pick a series that belongs to the selected room."),
+            )
+
         without = cleaned.get("buy_in_without_rake")
         rake = cleaned.get("rake")
         if without is not None and rake is not None:
