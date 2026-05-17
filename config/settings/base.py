@@ -141,6 +141,14 @@ LANGUAGES = [
 
 LOCALE_PATHS = [BASE_DIR / "locale"]
 
+# Tournament admin date widgets render `dd.mm.yyyy`. Django's admin
+# calendar JS uses `get_format("DATE_INPUT_FORMATS")[0]` to parse the
+# input value back into a Date; putting `%d.%m.%Y` first ensures the
+# calendar opens on the right month instead of a 1923 epoch fallback.
+# Settings-level DATE_INPUT_FORMATS is shadowed by the locale's
+# formats.py — we have to override via FORMAT_MODULE_PATH instead.
+FORMAT_MODULE_PATH = ["config.formats"]
+
 # --- Static / media -----------------------------------------------------
 
 STATIC_URL = "static/"

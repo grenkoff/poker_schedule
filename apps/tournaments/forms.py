@@ -17,6 +17,7 @@ from django.contrib.admin.widgets import (
     BaseAdminDateWidget,
     BaseAdminTimeWidget,
 )
+from django.utils import timezone as djtz
 from django.utils.translation import gettext_lazy as _
 
 from .models import BlindStructure, Tournament
@@ -68,6 +69,14 @@ class WeekdaysBitmaskField(forms.MultipleChoiceField):
         for raw in picked:
             mask |= 1 << int(raw)
         return mask
+
+    def has_changed(self, initial, data):
+        # Django's MultipleChoiceField.has_changed calls len() on initial,
+        # but our model stores a bitmask int — expand it to the list shape
+        # the parent expects.
+        if isinstance(initial, int):
+            initial = self.prepare_value(initial)
+        return super().has_changed(initial, data)
 
 
 class PeriodicityWidget(forms.Select):
@@ -323,6 +332,7 @@ class TournamentAdminForm(forms.ModelForm):
             "early_bird",
             "early_bird_type",
             "featured_final_table",
+            "deal_making",
         )
 
     def __init__(self, *args, **kwargs):
@@ -346,7 +356,7 @@ class TournamentAdminForm(forms.ModelForm):
                 self.fields[name].widget.attrs["max"] = "10"
         for name in ("min_players", "max_players"):
             if name in self.fields:
-                self.fields[name].widget.attrs["min"] = "2"
+                self.fields[name].widget.attrs["min"] = "1"
         if self.instance and self.instance.pk:
             self.fields["buy_in_total"].initial = self.instance.buy_in_total
             self.fields["buy_in_without_rake"].initial = self.instance.buy_in_without_rake
@@ -354,6 +364,22 @@ class TournamentAdminForm(forms.ModelForm):
             if self.instance.buy_in_total:
                 pct = self.instance.rake * Decimal(100) / self.instance.buy_in_total
                 self.fields["rake_percent"].initial = f"{pct:.2f}"
+            # Display starting_time / late_reg_at in the tournament's own
+            # timezone (the value the editor originally typed), not in
+            # whatever the active request TZ happens to be. We strip
+            # tzinfo so the SplitDateTime widget renders the components
+            # directly without re-converting.
+            instance_tz = self.instance.timezone
+            if instance_tz:
+                try:
+                    tz = zoneinfo.ZoneInfo(instance_tz)
+                except zoneinfo.ZoneInfoNotFoundError:
+                    tz = None
+                if tz is not None:
+                    for fname in ("starting_time", "late_reg_at"):
+                        val = getattr(self.instance, fname, None)
+                        if val and djtz.is_aware(val):
+                            self.initial[fname] = val.astimezone(tz).replace(tzinfo=None)
 
         # Late-reg fields are conditionally required: the checkbox state
         # decides. On a bound submission with the checkbox unchecked, the
@@ -369,6 +395,26 @@ class TournamentAdminForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
+
+        # Interpret the wall-clock datetimes the editor typed as living
+        # in the timezone they picked above, NOT in the request's active
+        # TZ (which is the logged-in admin's profile TZ — unrelated to
+        # the tournament's local time). SplitDateTimeField has already
+        # run `from_current_timezone` and made the value aware, but the
+        # wall-clock components match what the editor typed, so we strip
+        # tzinfo and re-anchor in the picked zone.
+        tz_name = cleaned.get("timezone")
+        if tz_name:
+            try:
+                tz = zoneinfo.ZoneInfo(tz_name)
+            except zoneinfo.ZoneInfoNotFoundError:
+                tz = None
+            if tz is not None:
+                for fname in ("starting_time", "late_reg_at"):
+                    val = cleaned.get(fname)
+                    if val:
+                        wallclock = val.replace(tzinfo=None) if djtz.is_aware(val) else val
+                        cleaned[fname] = djtz.make_aware(wallclock, tz)
 
         # Series must belong to the same room as the tournament.
         room = cleaned.get("room")

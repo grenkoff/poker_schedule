@@ -561,9 +561,11 @@
         if (realForm) realForm.addEventListener("submit", submit);
     }
 
-    /** Mask out days strictly earlier than the starting date in the
-     *  late-reg calendar popup (they remain visible but become a plain
-     *  greyed-out span with no click handler). */
+    /** In the late-reg calendar, grey out and disable any day strictly
+     *  earlier than the starting date so the editor literally can't
+     *  pick a late-reg before the tournament starts. Pure class toggling
+     *  on existing `<a>` cells (no node swapping, no MutationObserver),
+     *  invoked only on explicit triggers — opens + month navigation. */
     function bindDatePickerGating() {
         const ds = window.DateTimeShortcuts;
         if (!ds) return;
@@ -571,19 +573,19 @@
             if (dateInput.name !== "late_reg_at_0") return;
             const num = ds.calendarInputs.indexOf(dateInput);
             if (num < 0) return;
+            const box = document.getElementById("calendarbox" + num);
             const grid = document.getElementById("calendarin" + num);
-            if (!grid) return;
+            if (!box || !grid) return;
 
-            function applyMask() {
-                $$("span.tnmt-day-disabled", grid).forEach(function (s) {
-                    const a = document.createElement("a");
-                    a.href = "#";
-                    a.textContent = s.textContent;
-                    s.parentNode.replaceChild(a, s);
-                });
+            function startDay() {
                 const f = fields();
-                const start = parseDdmmyyyy(f.startDate && f.startDate.value);
-                if (!start) return;
+                const s = parseDdmmyyyy(f.startDate && f.startDate.value);
+                if (!s) return null;
+                return new Date(s.getFullYear(), s.getMonth(), s.getDate());
+            }
+
+            function applyVisual() {
+                const start = startDay();
                 const cal = ds.calendars[num];
                 if (!cal) return;
                 const month = cal.currentMonth;
@@ -592,15 +594,51 @@
                     const day = parseInt(a.textContent, 10);
                     if (!day) return;
                     const cellDate = new Date(year, month - 1, day);
-                    if (cellDate < start) {
-                        const span = document.createElement("span");
-                        span.textContent = a.textContent;
-                        span.className = "tnmt-day-disabled";
-                        a.parentNode.replaceChild(span, a);
+                    if (start && cellDate < start) {
+                        a.classList.add("tnmt-day-disabled");
+                    } else {
+                        a.classList.remove("tnmt-day-disabled");
                     }
                 });
             }
-            new MutationObserver(applyMask).observe(grid, { childList: true, subtree: true });
+
+            // Initial open: piggy-back on the date input click handler;
+            // the calendar's grid is drawn synchronously, so a microtask
+            // delay is enough.
+            dateInput.addEventListener("click", function () {
+                setTimeout(applyVisual, 0);
+            });
+            // Month navigation: prev/next-month links inside the
+            // calendarbox header redraw the grid; re-apply after.
+            box.addEventListener("click", function (e) {
+                const link = e.target.closest("a");
+                if (!link) return;
+                if (link.closest(".calendarnav-previous, .calendarnav-next")) {
+                    setTimeout(applyVisual, 0);
+                }
+            });
+        });
+    }
+
+    /** Django's calendar callback sets `input.value = ...` without
+     *  dispatching `input`/`change`, so our duration recompute (and the
+     *  start→late snap) never see the new date. Wrap each calendar's
+     *  callback to fire the events that downstream listeners expect. */
+    function patchCalendarCallbacks() {
+        const ds = window.DateTimeShortcuts;
+        if (!ds || !ds.calendars) return;
+        ds.calendars.forEach(function (cal, num) {
+            if (!cal || cal._tnmtPatched) return;
+            cal._tnmtPatched = true;
+            const orig = cal.callback;
+            cal.callback = function (y, m, d) {
+                if (typeof orig === "function") orig(y, m, d);
+                const inp = ds.calendarInputs[num];
+                if (inp) {
+                    inp.dispatchEvent(new Event("input", { bubbles: true }));
+                    inp.dispatchEvent(new Event("change", { bubbles: true }));
+                }
+            };
         });
     }
 
@@ -693,6 +731,7 @@
 
     function init() {
         rewireDateTimeShortcuts();
+        patchCalendarCallbacks();
         applyDefaults();
         gateLateRegTime();
         bindLateRegAvailableToggle();

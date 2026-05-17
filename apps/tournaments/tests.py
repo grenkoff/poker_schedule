@@ -703,3 +703,71 @@ def test_series_column_appears_in_all_columns():
     assert any(c.key == "series" for c in ALL_COLUMNS)
     # Series shown on the public list too (not admin_only).
     assert any(c.key == "series" for c in PUBLIC_COLUMNS)
+
+
+def test_weekdays_has_changed_accepts_int_initial():
+    """Regression: admin's add_view calls `form.changed_data` which routes
+    to `MultipleChoiceField.has_changed`, and that one calls len() on the
+    initial value. Our field stores the model bitmask as an int — make
+    sure has_changed normalizes it instead of raising TypeError."""
+    from apps.tournaments.forms import WeekdaysBitmaskField
+
+    field = WeekdaysBitmaskField()
+    # Mixed scenarios: int matching the submission, int differing, and
+    # the None default should all be handled without raising.
+    assert field.has_changed(0b1111111, ["0", "1", "2", "3", "4", "5", "6"]) is False
+    assert field.has_changed(0b0000001, ["0", "1"]) is True
+    assert field.has_changed(None, ["0"]) is True
+
+
+@pytest.mark.django_db
+def test_admin_form_interprets_starting_time_in_picked_timezone(pokerok):
+    """The `timezone` form field — not the request's active TZ — decides
+    how the wall-clock starting_time is interpreted. Picking Asia/Almaty
+    (+5) at 03:28 must persist as 22:28 UTC of the previous day."""
+    from zoneinfo import ZoneInfo
+
+    from apps.tournaments.forms import TournamentAdminForm
+
+    form = TournamentAdminForm(
+        data={
+            "room": str(pokerok.pk),
+            "series": str(_default_series(pokerok).pk),
+            "name": "Almaty Event",
+            "game_type": GameType.NLHE,
+            "buy_in_without_rake": "10.00",
+            "rake": "1.00",
+            "guaranteed_dollars": "100",
+            "payout_percent": "15",
+            "starting_stack": "10000",
+            "starting_stack_bb": "50",
+            "timezone": "Asia/Almaty",
+            "late_registration_available": "on",
+            "starting_time_0": "18.05.2026",
+            "starting_time_1": "03:28",
+            "late_reg_at_0": "18.05.2026",
+            "late_reg_at_1": "03:28",
+            "late_reg_level": "12",
+            "blind_interval_minutes": "10",
+            "break_minutes": "5",
+            "players_per_table": "9",
+            "players_at_final_table": "9",
+            "min_players": "2",
+            "max_players": "1000",
+            "re_entry": str(ReEntryOption.objects.get(name="unlimited").pk),
+            "bubble": str(BubbleOption.objects.get(name="finalized_when_registration_closes").pk),
+            "periodicity": str(Periodicity.objects.get(name="one_off").pk),
+            "weekdays": ["0", "1", "2", "3", "4", "5", "6"],
+            "early_bird": "",
+            "early_bird_type": str(EarlyBirdType.objects.get(name="compensated_at_bubble").pk),
+            "featured_final_table": "",
+        }
+    )
+    assert form.is_valid(), form.errors
+    saved = form.save()
+    expected = datetime(2026, 5, 17, 22, 28, tzinfo=UTC)
+    assert saved.starting_time == expected
+    assert saved.late_reg_at == expected
+    # Cross-check: viewing the stored aware datetime in Almaty restores
+    # the original wall-clock value.
+    assert saved.starting_time.astimezone(ZoneInfo("Asia/Almaty")).hour == 3

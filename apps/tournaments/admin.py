@@ -17,6 +17,7 @@ from .forms import (
 from .models import (
     BlindStructure,
     BubbleOption,
+    DealMakingOption,
     EarlyBirdType,
     Periodicity,
     ReEntryOption,
@@ -77,7 +78,6 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     list_per_page = 100
     list_filter = ()
     search_fields = ("name", "room__name")
-    autocomplete_fields = ("room",)
     inlines = (BlindStructureInline,)
     actions = ("mark_verified", "unmark_verified")
 
@@ -124,7 +124,14 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         ),
         (
             _("Features"),
-            {"fields": ("early_bird", "early_bird_type", "featured_final_table")},
+            {
+                "fields": (
+                    "early_bird",
+                    "early_bird_type",
+                    "featured_final_table",
+                    "deal_making",
+                ),
+            },
         ),
     )
 
@@ -152,7 +159,25 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
             kwargs.setdefault("widget", PeriodicityWidget())
         elif db_field.name == "series":
             kwargs.setdefault("widget", TournamentSeriesWidget())
-        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+            # Exclude the legacy "Default" series so editors don't pick it.
+            # It exists only to satisfy the NOT NULL constraint for rows
+            # that existed before per-room series were curated.
+            kwargs.setdefault(
+                "queryset",
+                TournamentSeries.objects.exclude(slug="default").select_related("room"),
+            )
+        formfield = super().formfield_for_foreignkey(db_field, request, **kwargs)
+        if db_field.name == "series" and formfield is not None:
+            # Drop the room prefix from each option label — the room is
+            # already shown in its own field above. The Room-filter JS
+            # uses data-room-id, not the label, so this is purely visual.
+            formfield.label_from_instance = lambda obj: obj.name
+        if db_field.name == "room" and formfield is not None:
+            # Default Select (no autocomplete) — ensure the blank option
+            # is present so the user can clear the selection and the
+            # series field defaults to disabled on a fresh /add/.
+            formfield.empty_label = "---------"
+        return formfield
 
     def get_queryset(self, request):
         self._extend_recurring_series()
@@ -259,6 +284,11 @@ class EarlyBirdTypeAdmin(_OptionAdmin):
     pass
 
 
+@admin.register(DealMakingOption)
+class DealMakingOptionAdmin(_OptionAdmin):
+    pass
+
+
 @admin.register(Periodicity)
 class PeriodicityAdmin(_OptionAdmin):
     list_display = ("label", "name", "interval_seconds", "sort_order")  # type: ignore[assignment]
@@ -275,4 +305,4 @@ class TournamentSeriesAdmin(StaffAdminMixin, admin.ModelAdmin):
     prepopulated_fields = {"slug": ("name",)}
     autocomplete_fields = ("room",)
     ordering = ("room__name", "sort_order", "name")
-    fields = ("room", "name", "slug", "sort_order")
+    fields = ("room", "name", "slug", "image", "sort_order")

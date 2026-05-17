@@ -53,6 +53,12 @@ class EarlyBirdType(_OptionBase):
         verbose_name_plural = _("early bird types")
 
 
+class DealMakingOption(_OptionBase):
+    class Meta(_OptionBase.Meta):
+        verbose_name = _("deal-making option")
+        verbose_name_plural = _("deal-making options")
+
+
 class Periodicity(_OptionBase):
     """How often a tournament recurs.
 
@@ -213,12 +219,12 @@ class Tournament(models.Model):
     min_players = models.PositiveIntegerField(
         _("min players"),
         default=3,
-        validators=[MinValueValidator(2)],
+        validators=[MinValueValidator(1)],
     )
     max_players = models.PositiveIntegerField(
         _("max players"),
         default=8000,
-        validators=[MinValueValidator(2)],
+        validators=[MinValueValidator(1)],
     )
     re_entry = models.ForeignKey(
         ReEntryOption,
@@ -270,6 +276,14 @@ class Tournament(models.Model):
         verbose_name=_("early bird type"),
     )
     featured_final_table = models.BooleanField(_("featured final table"))
+    deal_making = models.ForeignKey(
+        DealMakingOption,
+        on_delete=models.PROTECT,
+        related_name="tournaments",
+        verbose_name=_("deal making"),
+        null=True,
+        blank=True,
+    )
 
     # --- workflow (kept from before) ------------------------------------
     verified_by_admin = models.BooleanField(_("verified by superadmin"), default=False)

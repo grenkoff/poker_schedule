@@ -20,3 +20,4 @@ class PokerRoomAdmin(StaffAdminMixin, admin.ModelAdmin):
     list_editable = ("is_active",)
     prepopulated_fields = {"slug": ("name",)}
     autocomplete_fields = ("network",)
+    fields = ("name", "slug", "network", "website", "image", "is_active")
