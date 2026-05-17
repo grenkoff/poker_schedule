@@ -32,12 +32,12 @@ def _enable_totp(user) -> Authenticator:
 
 
 @pytest.mark.django_db
-def test_superadmin_without_mfa_sees_warning(client: Client):
+def test_superadmin_without_mfa_sees_warning_in_admin(client: Client):
     sa = User.objects.create_user(
         username="sa", email="sa@example.com", password="x", role=Role.SUPERADMIN
     )
     client.force_login(sa)
-    response = client.get("/")
+    response = client.get("/admin/")
     assert response.status_code == 200
     assert b"without 2FA" in response.content
     assert b"set up two-factor" in response.content
@@ -49,7 +49,7 @@ def test_warning_links_to_mfa_setup(client: Client):
         username="sa", email="sa@example.com", password="x", role=Role.SUPERADMIN
     )
     client.force_login(sa)
-    response = client.get("/")
+    response = client.get("/admin/")
     assert b"/accounts/2fa/" in response.content
 
 
@@ -63,7 +63,7 @@ def test_superadmin_with_mfa_sees_no_warning(client: Client):
     )
     _enable_totp(sa)
     client.force_login(sa)
-    response = client.get("/")
+    response = client.get("/admin/")
     assert b"without 2FA" not in response.content
 
 
@@ -73,7 +73,7 @@ def test_admin_role_sees_no_warning(client: Client):
         username="adm", email="adm@example.com", password="x", role=Role.ADMIN
     )
     client.force_login(admin_user)
-    response = client.get("/")
+    response = client.get("/admin/")
     assert b"without 2FA" not in response.content
 
 
@@ -92,9 +92,9 @@ def test_warning_only_appears_once_per_session(client: Client):
         username="sa", email="sa@example.com", password="x", role=Role.SUPERADMIN
     )
     client.force_login(sa)
-    first = client.get("/")
+    first = client.get("/admin/")
     assert b"without 2FA" in first.content
-    second = client.get("/")
+    second = client.get("/admin/")
     assert b"without 2FA" not in second.content
 
 
@@ -104,24 +104,27 @@ def test_warning_skipped_for_htmx_requests(client: Client):
         username="sa", email="sa@example.com", password="x", role=Role.SUPERADMIN
     )
     client.force_login(sa)
-    response = client.get("/", HTTP_HX_REQUEST="true")
+    response = client.get("/admin/", HTTP_HX_REQUEST="true")
     assert b"without 2FA" not in response.content
     # And the session flag should NOT be set, so the next non-HTMX request
     # still fires the nag.
-    fresh = client.get("/")
+    fresh = client.get("/admin/")
     assert b"without 2FA" in fresh.content
 
 
 @pytest.mark.django_db
-def test_warning_skipped_on_accounts_paths(client: Client):
+def test_warning_skipped_on_public_pages(client: Client):
     sa = User.objects.create_user(
         username="sa", email="sa@example.com", password="x", role=Role.SUPERADMIN
     )
     client.force_login(sa)
-    # Hit an /accounts/ path — the nag must not fire here so the user
-    # can navigate to the MFA setup page without hitting the banner.
-    response = client.get("/accounts/email/")
+    # Public tournament list — banner must not appear here.
+    response = client.get("/")
     assert b"without 2FA" not in response.content
+    # And the session flag stays unset, so a follow-up admin visit
+    # still fires the nag.
+    admin_response = client.get("/admin/")
+    assert b"without 2FA" in admin_response.content
 
 
 # --- helper ---------------------------------------------------------------
