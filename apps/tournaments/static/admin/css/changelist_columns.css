@@ -186,6 +186,15 @@
     display: none !important;
 }
 
+/* Series icon next to series name in the changelist + change-form. */
+.tnmt-series-icon {
+    height: 18px;
+    width: 18px;
+    object-fit: contain;
+    vertical-align: middle;
+    margin-right: 4px;
+}
+
 /* Browser-local TZ label appended to date column headers. */
 #result_list thead th .tz-anno {
     font-weight: 400;

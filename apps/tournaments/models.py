@@ -73,6 +73,39 @@ class Periodicity(_OptionBase):
         verbose_name_plural = _("periodicities")
 
 
+class TournamentSeries(models.Model):
+    """Room-scoped grouping for tournaments (e.g. "WSOP Online" on Pokerok).
+
+    Editors curate the per-room list of series; every Tournament must
+    belong to exactly one series of its room.
+    """
+
+    room = models.ForeignKey(
+        PokerRoom,
+        on_delete=models.CASCADE,
+        related_name="tournament_series",
+        verbose_name=_("room"),
+    )
+    name = models.CharField(_("name"), max_length=120)
+    slug = models.SlugField(_("slug"), max_length=120)
+    image = models.ImageField(_("image"), upload_to="series/", blank=True)
+    sort_order = models.PositiveIntegerField(_("sort order"), default=0)
+
+    class Meta:
+        verbose_name = _("tournament series")
+        verbose_name_plural = _("tournament series")
+        ordering = ("room__name", "sort_order", "name")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("room", "slug"),
+                name="tournamentseries_unique_room_slug",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.room.name} — {self.name}"
+
+
 class Tournament(models.Model):
     """Manually-entered poker tournament.
 
@@ -87,6 +120,12 @@ class Tournament(models.Model):
         on_delete=models.CASCADE,
         related_name="tournaments",
         verbose_name=_("room"),
+    )
+    series = models.ForeignKey(
+        TournamentSeries,
+        on_delete=models.PROTECT,
+        related_name="tournaments",
+        verbose_name=_("tournament series"),
     )
     name = models.CharField(_("name"), max_length=200)
     game_type = models.CharField(

@@ -15,6 +15,7 @@ from apps.tournaments.models import (
     Periodicity,
     ReEntryOption,
     Tournament,
+    TournamentSeries,
 )
 from apps.tournaments.templatetags.money import money
 
@@ -59,8 +60,12 @@ def pokerok() -> PokerRoom:
 def _make_tournament(
     room: PokerRoom, *, name: str = "Test", starting_time: datetime, **overrides
 ) -> Tournament:
+    series, _ = TournamentSeries.objects.get_or_create(
+        room=room, slug="default", defaults={"name": "Default"}
+    )
     defaults = {
         "room": room,
+        "series": series,
         "name": name,
         "game_type": GameType.NLHE,
         "buy_in_total": Decimal("11.00"),

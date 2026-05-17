@@ -38,6 +38,7 @@ def _build_child(master, next_start: datetime, late_reg_offset: timedelta):
 
     return Tournament(
         room=master.room,
+        series=master.series,
         name=master.name,
         game_type=master.game_type,
         buy_in_total=master.buy_in_total,

@@ -22,6 +22,7 @@ from apps.tournaments.models import (
     Periodicity,
     ReEntryOption,
     Tournament,
+    TournamentSeries,
 )
 
 
@@ -49,8 +50,12 @@ def _make(
     featured_final_table: bool = False,
     verified_by_admin: bool = True,
 ) -> Tournament:
+    series, _ = TournamentSeries.objects.get_or_create(
+        room=room, slug="default", defaults={"name": "Default"}
+    )
     return Tournament.objects.create(
         room=room,
+        series=series,
         name=name,
         game_type=game_type,
         buy_in_total=buy_in_total,

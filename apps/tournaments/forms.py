@@ -100,6 +100,36 @@ class PeriodicityWidget(forms.Select):
         return option
 
 
+class TournamentSeriesWidget(forms.Select):
+    """Series Select tagged with data-room-id on each <option>.
+
+    The Tournament admin form lists every series across every room;
+    `series_filter.js` reads `data-room-id` and hides options whose
+    room doesn't match the currently-selected Room.
+    """
+
+    def __init__(self, attrs=None):
+        merged = {"data-tnmt-series": "1", **(attrs or {})}
+        super().__init__(attrs=merged)
+        self._room_map: dict[int, int] | None = None
+
+    def _rooms(self) -> dict[int, int]:
+        if self._room_map is None:
+            from .models import TournamentSeries
+
+            self._room_map = dict(TournamentSeries.objects.values_list("pk", "room_id"))
+        return self._room_map
+
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex, attrs)
+        pk = getattr(value, "value", value)
+        if pk not in (None, ""):
+            room_id = self._rooms().get(int(pk))
+            if room_id is not None:
+                option["attrs"]["data-room-id"] = str(room_id)
+        return option
+
+
 class _TournamentDateWidget(BaseAdminDateWidget):
     """`dd.mm.yyyy` date input that still pulls in admin calendar JS.
 
@@ -268,6 +298,7 @@ class TournamentAdminForm(forms.ModelForm):
         # (handled by the proxy Decimal fields above + clean()).
         fields = (
             "room",
+            "series",
             "name",
             "game_type",
             "guaranteed_dollars",
@@ -338,6 +369,16 @@ class TournamentAdminForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
+
+        # Series must belong to the same room as the tournament.
+        room = cleaned.get("room")
+        series = cleaned.get("series")
+        if room is not None and series is not None and series.room_id != room.pk:
+            self.add_error(
+                "series",
+                _("Pick a series that belongs to the selected room."),
+            )
+
         without = cleaned.get("buy_in_without_rake")
         rake = cleaned.get("rake")
         if without is not None and rake is not None:

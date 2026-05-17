@@ -17,6 +17,7 @@ from apps.tournaments.models import (
     Periodicity,
     ReEntryOption,
     Tournament,
+    TournamentSeries,
 )
 
 User = get_user_model()
@@ -169,8 +170,12 @@ def test_authenticated_user_timezone_is_applied_to_rendered_times(client: Client
     starting_time = datetime.now(UTC).replace(
         hour=19, minute=0, second=0, microsecond=0
     ) + timedelta(days=1)
+    series, _ = TournamentSeries.objects.get_or_create(
+        room=room, slug="default", defaults={"name": "Default"}
+    )
     Tournament.objects.create(
         room=room,
+        series=series,
         name="Evening Event",
         game_type=GameType.NLHE,
         buy_in_total=Decimal("11.00"),
@@ -211,8 +216,12 @@ def test_anonymous_user_sees_utc(client: Client):
     starting_time = datetime.now(UTC).replace(
         hour=19, minute=0, second=0, microsecond=0
     ) + timedelta(days=1)
+    series, _ = TournamentSeries.objects.get_or_create(
+        room=room, slug="default", defaults={"name": "Default"}
+    )
     Tournament.objects.create(
         room=room,
+        series=series,
         name="UTC Event",
         game_type=GameType.NLHE,
         buy_in_total=Decimal("11.00"),
