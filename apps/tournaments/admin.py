@@ -124,6 +124,18 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     def get_readonly_fields(self, request, obj=None):
         return ("series_master",)
 
+    def get_fieldsets(self, request, obj=None):
+        # `series_master` only carries information for auto-generated child
+        # rows. Hide it on /add/ and on parents that have no master, so the
+        # form doesn't show an empty placeholder field nobody can fill.
+        fieldsets = super().get_fieldsets(request, obj)
+        if obj is None or obj.series_master_id is None:
+            fieldsets = tuple(
+                (name, {**opts, "fields": tuple(f for f in opts["fields"] if f != "series_master")})
+                for name, opts in fieldsets
+            )
+        return fieldsets
+
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         # Custom Periodicity widget tags each <option> with
         # data-interval-seconds so the weekday JS can enable/disable
