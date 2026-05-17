@@ -316,12 +316,6 @@ class TournamentAdminForm(forms.ModelForm):
         for name in ("min_players", "max_players"):
             if name in self.fields:
                 self.fields[name].widget.attrs["min"] = "2"
-        # Custom widget on Periodicity so each <option> carries
-        # data-interval-seconds; the weekday JS reads this to decide
-        # whether the Active-weekdays checkboxes should be enabled.
-        if "periodicity" in self.fields:
-            self.fields["periodicity"].widget = PeriodicityWidget()
-
         if self.instance and self.instance.pk:
             self.fields["buy_in_total"].initial = self.instance.buy_in_total
             self.fields["buy_in_without_rake"].initial = self.instance.buy_in_without_rake
