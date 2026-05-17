@@ -476,13 +476,57 @@ def test_admin_form_rejects_starting_time_on_disallowed_weekday(pokerok):
 
 
 @pytest.mark.django_db
-def test_admin_form_rejects_empty_weekdays(pokerok):
+def test_admin_form_rejects_empty_weekdays_for_recurring(pokerok):
+    from apps.tournaments.forms import TournamentAdminForm
+
+    daily = Periodicity.objects.get(name="every_24_hours")
+    form = TournamentAdminForm(
+        data={
+            "room": str(pokerok.pk),
+            "name": "Empty Mask",
+            "game_type": GameType.NLHE,
+            "buy_in_without_rake": "10.00",
+            "rake": "1.00",
+            "guaranteed_dollars": "100",
+            "payout_percent": "15",
+            "starting_stack": "10000",
+            "starting_stack_bb": "50",
+            "timezone": "UTC",
+            "late_registration_available": "on",
+            "starting_time_0": "01.05.2026",
+            "starting_time_1": "20:00",
+            "late_reg_at_0": "01.05.2026",
+            "late_reg_at_1": "20:30",
+            "late_reg_level": "12",
+            "blind_interval_minutes": "10",
+            "break_minutes": "5",
+            "players_per_table": "9",
+            "players_at_final_table": "9",
+            "min_players": "2",
+            "max_players": "1000",
+            "re_entry": str(ReEntryOption.objects.get(name="unlimited").pk),
+            "bubble": str(BubbleOption.objects.get(name="finalized_when_registration_closes").pk),
+            "periodicity": str(daily.pk),
+            "weekdays": [],
+            "early_bird": "",
+            "early_bird_type": str(EarlyBirdType.objects.get(name="compensated_at_bubble").pk),
+            "featured_final_table": "",
+        }
+    )
+    assert not form.is_valid()
+    assert "weekdays" in form.errors
+
+
+@pytest.mark.django_db
+def test_admin_form_accepts_empty_weekdays_for_one_off(pokerok):
+    """One-off tournament ignores the mask — empty POST is acceptable and
+    the saved row falls back to the all-days default."""
     from apps.tournaments.forms import TournamentAdminForm
 
     form = TournamentAdminForm(
         data={
             "room": str(pokerok.pk),
-            "name": "Empty Mask",
+            "name": "One-off",
             "game_type": GameType.NLHE,
             "buy_in_without_rake": "10.00",
             "rake": "1.00",
@@ -512,8 +556,9 @@ def test_admin_form_rejects_empty_weekdays(pokerok):
             "featured_final_table": "",
         }
     )
-    assert not form.is_valid()
-    assert "weekdays" in form.errors
+    assert form.is_valid(), form.errors
+    saved = form.save()
+    assert saved.weekdays == 0b1111111
 
 
 @pytest.mark.django_db

@@ -182,3 +182,18 @@ input.tnmt-date-trigger:disabled,
 .calendarbox .calendar-cancel {
     display: none !important;
 }
+
+/* Active-weekdays row — greyed when Periodicity is unset / one-off. */
+.field-weekdays.tnmt-weekdays-disabled label,
+.field-weekdays.tnmt-weekdays-disabled .help {
+    color: #999;
+    cursor: not-allowed;
+}
+.field-weekdays.tnmt-weekdays-disabled input[type="checkbox"] {
+    cursor: not-allowed;
+}
+.tnmt-weekday-presets a.tnmt-disabled {
+    color: #aaa;
+    pointer-events: none;
+    text-decoration: none;
+}
