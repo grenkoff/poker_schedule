@@ -71,6 +71,18 @@ def _with_unit(rendered: str, *, prefix: str = "", suffix: str = "") -> str:
     return f"{prefix}{rendered}{suffix}"
 
 
+def _fmt_name(t: Tournament) -> str | SafeString:
+    """Tournament name, painted red while late registration is open after
+    the tournament has already started — visual cue that you can still
+    sign up but the action is live."""
+    from django.utils.timezone import now as _now
+
+    moment = _now()
+    if t.starting_time and t.late_reg_at and t.starting_time <= moment < t.late_reg_at:
+        return format_html('<span class="tnmt-late-reg-active">{}</span>', t.name)
+    return t.name
+
+
 def _fmt_series(series) -> str | SafeString:
     """`<img> name` if the series has an image, otherwise just the name."""
     if series is None:
@@ -88,7 +100,7 @@ ALL_COLUMNS: tuple[Column, ...] = (
     Column(
         "name",
         _("Name"),
-        lambda t: t.name,
+        _fmt_name,
         sort_key="name",
         db_field="name",
         pinned=True,

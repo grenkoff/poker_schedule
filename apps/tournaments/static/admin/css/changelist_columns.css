@@ -195,6 +195,14 @@
     margin-right: 4px;
 }
 
+/* Tournament name turns red while it's running but late-reg is open.
+ * `!important` to override the admin's blue link color on the first
+ * column's auto-wrapped <a href="...">. */
+.tnmt-late-reg-active {
+    color: #c0392b !important;
+    font-weight: 600;
+}
+
 /* Browser-local TZ label appended to date column headers. */
 #result_list thead th .tz-anno {
     font-weight: 400;

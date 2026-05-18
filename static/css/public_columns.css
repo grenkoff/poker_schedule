@@ -82,6 +82,13 @@
     margin-right: 4px;
 }
 
+/* Tournament started but late registration is still open. Painted at
+ * render time and refreshed by the 5-min HTMX poll. */
+.tnmt-late-reg-active {
+    color: #c0392b;
+    font-weight: 600;
+}
+
 .public-changelist-table thead th {
     background: #f7f7f7;
     text-transform: uppercase;
