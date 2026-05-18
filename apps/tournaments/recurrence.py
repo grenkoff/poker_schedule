@@ -139,6 +139,15 @@ def extend_series_to_horizon(master, *, now: datetime | None = None) -> int:
     delta = timedelta(seconds=interval)
     horizon = now + timedelta(days=_horizon_for(master))
 
+    # If the room's horizon was shrunk (e.g. 30 → 7), drop any FUTURE
+    # children that now fall past it. Past children stay as historical
+    # data. Reconciles "the DB matches the current horizon" without
+    # waiting for the master to be re-saved.
+    Tournament.objects.filter(
+        series_master=master,
+        starting_time__gt=horizon,
+    ).delete()
+
     last_child_start = Tournament.objects.filter(series_master=master).aggregate(
         last=Max("starting_time")
     )["last"]
