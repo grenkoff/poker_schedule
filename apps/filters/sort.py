@@ -37,7 +37,11 @@ def parse_sort(value: str | None) -> tuple[str, bool]:
 def apply_sort(qs: QuerySet[Tournament], value: str | None) -> QuerySet[Tournament]:
     key, descending = parse_sort(value)
     column = SORT_FIELDS[key]
-    return qs.order_by(f"-{column}" if descending else column)
+    # `-pk` is the same tiebreaker Django admin's ChangeList appends, so
+    # rows with equal primary sort values land in the same order in both
+    # the public list and `/admin/tournaments/tournament/`.
+    primary = f"-{column}" if descending else column
+    return qs.order_by(primary, "-pk")
 
 
 def toggle_value(current: str | None, target_key: str) -> str:
