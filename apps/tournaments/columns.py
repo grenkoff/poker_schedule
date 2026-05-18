@@ -49,13 +49,19 @@ def _fmt_dt(value) -> str | SafeString:
 
 
 def _fmt_decimal(value) -> str:
-    """Whole numbers as int (`1`); otherwise 2 decimals (`1.50`)."""
+    """2-decimal display, but strip trailing `.00` so `8.00 → 8`.
+
+    Format-first lets us catch values that aren't exactly integer but
+    round to integer at 2 decimals (e.g. `0.71/8.88*100 = 7.9954…` →
+    "8.00" → "8"), which is what users expect for rake / buy-in cells.
+    """
     if value is None:
         return ""
     d = value if isinstance(value, Decimal) else Decimal(str(value))
-    if d == d.to_integral_value():
-        return str(int(d))
-    return f"{d:.2f}"
+    formatted = f"{d:.2f}"
+    if formatted.endswith(".00"):
+        return formatted[:-3]
+    return formatted
 
 
 def _with_unit(rendered: str, *, prefix: str = "", suffix: str = "") -> str:
