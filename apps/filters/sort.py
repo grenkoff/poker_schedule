@@ -37,11 +37,12 @@ def parse_sort(value: str | None) -> tuple[str, bool]:
 def apply_sort(qs: QuerySet[Tournament], value: str | None) -> QuerySet[Tournament]:
     key, descending = parse_sort(value)
     column = SORT_FIELDS[key]
-    # `-pk` is the same tiebreaker Django admin's ChangeList appends, so
-    # rows with equal primary sort values land in the same order in both
-    # the public list and `/admin/tournaments/tournament/`.
+    # Cheap-first tiebreaker: when two tournaments share the same primary
+    # sort value (e.g. identical starting_time), the lower buy-in comes
+    # first. `TournamentAdmin.ordering` mirrors this so the admin and
+    # public lists agree on the default order.
     primary = f"-{column}" if descending else column
-    return qs.order_by(primary, "-pk")
+    return qs.order_by(primary, "buy_in_total")
 
 
 def toggle_value(current: str | None, target_key: str) -> str:

@@ -75,6 +75,11 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
 
     list_display = tuple(f"col_{c.key}" for c in ALL_COLUMNS)
     list_select_related = ("room", "re_entry", "series")
+    # Default sort matches the public list (`apps/filters/sort.py::apply_sort`):
+    # starting_time ASC, cheap-first tiebreak. Django's ChangeList still
+    # appends `-pk` for stable pagination, which only matters when both
+    # primary keys above tie — rare in practice.
+    ordering = ("starting_time", "buy_in_total")
     list_per_page = 100
     list_filter = ()
     search_fields = ("name", "room__name")
