@@ -189,6 +189,10 @@ def test_admin_changelist_hides_started_no_late_reg(admin_client):
 @pytest.mark.django_db
 def test_admin_changelist_extends_recurring_series(admin_client):
     room = PokerRoom.objects.get(slug="pokerok")
+    # Migration 0006 sets Pokerok's horizon to 7; the assertion below
+    # expects the historical 30-day default behaviour.
+    room.horizon_days = 30
+    room.save(update_fields=["horizon_days"])
     daily = Periodicity.objects.get(name="every_24_hours")
     now = timezone.now()
     # Master start far in the past — regenerate_series at create time

@@ -10,6 +10,7 @@
     <script src="{% static 'js/localize_times.js' %}" defer></script>
     <script src="{% static 'js/sticky_hscroll.js' %}" defer></script>
     <script src="{% static 'js/sticky_thead.js' %}" defer></script>
+    <script src="{% static 'js/prune_expired.js' %}" defer></script>
 {% endblock %}
 
 {% block content %}
@@ -36,7 +37,11 @@
     {% include "tournaments/_tournament_filter.html" %}
 </details>
 
-<div id="tournament-table">
+<div id="tournament-table"
+     hx-get="{% url 'tournaments:list' %}?{{ request.GET.urlencode }}"
+     hx-trigger="every 300s"
+     hx-target="#tournament-table"
+     hx-swap="innerHTML">
     {% include "tournaments/_tournament_table.html" %}
 </div>
 {% endblock %}

@@ -41,6 +41,14 @@ class PokerRoom(models.Model):
     )
     website = models.URLField(_("website"), blank=True)
     image = models.ImageField(_("image"), upload_to="rooms/", blank=True)
+    horizon_days = models.PositiveSmallIntegerField(
+        _("horizon (days)"),
+        default=30,
+        help_text=_(
+            "How many days of recurring tournament children to materialize forward "
+            "for tournaments hosted by this room."
+        ),
+    )
     is_active = models.BooleanField(
         _("active"),
         default=True,

@@ -155,6 +155,7 @@ class Tournament(models.Model):
     )
     payout_percent = models.PositiveSmallIntegerField(
         _("payout distribution, %"),
+        default=15,
         validators=[MinValueValidator(1), MaxValueValidator(100)],
         help_text=_("Percentage of the field that gets paid."),
     )
