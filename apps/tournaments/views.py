@@ -28,10 +28,13 @@ def tournament_list(request: HttpRequest) -> HttpResponse:
     table partial so the filter form above it is preserved — full-page
     loads stay as the SEO-friendly canonical response.
     """
+    # Show tournaments while late registration is still open — matches
+    # what `prune_expired.js` removes client-side and what `TournamentAdmin`
+    # filters on, so users don't see a row vanish before late-reg closes.
     qs = Tournament.objects.filter(
-        starting_time__gte=timezone.now(),
+        late_reg_at__gte=timezone.now(),
         verified_by_admin=True,
-    ).select_related("room", "room__network", "re_entry")
+    ).select_related("room", "room__network", "re_entry", "series")
     q = (request.GET.get("q") or "").strip()
     if q:
         qs = qs.filter(Q(name__icontains=q) | Q(room__name__icontains=q))

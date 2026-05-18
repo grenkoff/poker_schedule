@@ -24,7 +24,7 @@
     </thead>
     <tbody>
     {% for t in tournaments %}
-    <tr>
+    <tr data-late-reg-at="{{ t.late_reg_at|date:'c' }}">
         {% for col in columns %}
         <td>{% render_column t col %}</td>
         {% endfor %}

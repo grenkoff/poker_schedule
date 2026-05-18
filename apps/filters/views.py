@@ -66,7 +66,8 @@ def shared_view(request: HttpRequest, slug: str) -> HttpResponse:
         if value := request.GET.get(key):
             merged[key] = value
 
-    qs = Tournament.objects.filter(starting_time__gte=timezone.now()).select_related(
+    # Same "late-reg still open" filter as the public list view.
+    qs = Tournament.objects.filter(late_reg_at__gte=timezone.now()).select_related(
         "room", "room__network", "re_entry", "series"
     )
     filterset = TournamentFilter(merged, queryset=qs)

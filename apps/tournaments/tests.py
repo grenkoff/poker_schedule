@@ -26,7 +26,16 @@ from apps.tournaments.recurrence import (
 
 @pytest.fixture
 def pokerok() -> PokerRoom:
-    return PokerRoom.objects.get(slug="pokerok")
+    room = PokerRoom.objects.get(slug="pokerok")
+    # Migration `0006_pokerok_horizon_7` ships a 7-day horizon for the
+    # real Pokerok room. The existing recurrence tests were written
+    # against the 30-day default and use `pokerok` as the canonical
+    # fixture, so reset it here. Per-test horizon tests below override
+    # to whatever they need.
+    if room.horizon_days != 30:
+        room.horizon_days = 30
+        room.save(update_fields=["horizon_days"])
+    return room
 
 
 def _default_series(room: PokerRoom) -> TournamentSeries:
@@ -771,3 +780,98 @@ def test_admin_form_interprets_starting_time_in_picked_timezone(pokerok):
     # Cross-check: viewing the stored aware datetime in Almaty restores
     # the original wall-clock value.
     assert saved.starting_time.astimezone(ZoneInfo("Asia/Almaty")).hour == 3
+
+
+# --- payout default + per-room horizon ------------------------------------
+
+
+@pytest.mark.django_db
+def test_payout_percent_default_is_15(pokerok):
+    # Build a Tournament without explicitly setting payout_percent so
+    # the model default applies.
+    series = _default_series(pokerok)
+    starting = datetime(2026, 7, 1, 20, 0, tzinfo=UTC)
+    t = Tournament(
+        room=pokerok,
+        series=series,
+        name="Default Payout",
+        game_type=GameType.NLHE,
+        buy_in_total=Decimal("11.00"),
+        buy_in_without_rake=Decimal("10.00"),
+        rake=Decimal("1.00"),
+        guaranteed_dollars=10000,
+        starting_stack=10000,
+        starting_stack_bb=50,
+        starting_time=starting,
+        late_reg_at=starting + timedelta(hours=1),
+        late_reg_level=12,
+        blind_interval_minutes=10,
+        break_minutes=5,
+        players_per_table=9,
+        players_at_final_table=9,
+        min_players=2,
+        max_players=1000,
+        re_entry=ReEntryOption.objects.get(name="unlimited"),
+        bubble=BubbleOption.objects.get(name="finalized_when_registration_closes"),
+        early_bird=False,
+        early_bird_type=EarlyBirdType.objects.get(name="compensated_at_bubble"),
+        featured_final_table=False,
+        periodicity=Periodicity.objects.get(name="one_off"),
+    )
+    t.save()
+    t.refresh_from_db()
+    assert t.payout_percent == 15
+
+
+@pytest.mark.django_db
+def test_pokerroom_horizon_days_default_is_30():
+    other = PokerRoom.objects.exclude(slug="pokerok").first()
+    assert other is not None
+    # Non-Pokerok rooms keep the default (data migration only touches pokerok).
+    assert other.horizon_days == 30
+
+
+@pytest.mark.django_db
+def test_pokerok_horizon_days_seeded_to_7_by_migration():
+    # Don't use the `pokerok` fixture — it resets horizon to 30. Re-fetch
+    # the row directly to observe the migration's value.
+    room = PokerRoom.objects.get(slug="pokerok")
+    assert room.horizon_days == 7
+
+
+@pytest.mark.django_db
+def test_regenerate_series_respects_room_horizon(pokerok):
+    pokerok.horizon_days = 7
+    pokerok.save(update_fields=["horizon_days"])
+    daily = Periodicity.objects.get(name="every_24_hours")
+    master = _make_tournament(pokerok, periodicity=daily)
+    regenerate_series(master)
+    assert Tournament.objects.filter(series_master=master).count() == 7
+
+
+@pytest.mark.django_db
+def test_extend_series_respects_room_horizon(pokerok):
+    from django.utils import timezone as djtz
+
+    pokerok.horizon_days = 7
+    pokerok.save(update_fields=["horizon_days"])
+    daily = Periodicity.objects.get(name="every_24_hours")
+    # Master in the past so extend_series has to roll forward.
+    now = djtz.now()
+    master_start = now - timedelta(days=60)
+    master = _make_tournament(
+        pokerok,
+        periodicity=daily,
+        starting_time=master_start,
+        late_reg_at=master_start + timedelta(hours=1),
+    )
+    # Wipe out the children regenerate_series produced (all in the past
+    # anyway) so we can observe the rolling extend window in isolation.
+    Tournament.objects.filter(series_master=master).delete()
+    created = extend_series_to_horizon(master, now=now)
+    # 7-day horizon at daily cadence → far fewer than the 30-day default
+    # would have produced. Extend includes one fast-forward slot before
+    # `now`, plus 7 daily ticks within (now, now+7d], so allow some
+    # slack but ensure the room-scoped horizon is being honoured.
+    assert created <= 10
+    assert created > 0

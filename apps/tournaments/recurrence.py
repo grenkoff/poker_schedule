@@ -3,14 +3,15 @@
 A Tournament whose `periodicity.interval_seconds > 0` and that is not
 itself a child of a series (i.e. `series_master_id is None`) is a
 *master*. We generate sibling Tournament rows for every shifted start
-time that falls within `HORIZON_DAYS` from the relevant base time.
+time that falls within `master.room.horizon_days` from the relevant
+base time, so different rooms can curate different forward windows.
 
 `regenerate_series` wipes and re-creates all children from
-`master.starting_time + delta` up to `master.starting_time + 30 days`;
+`master.starting_time + delta` up to `master.starting_time + horizon`;
 it is invoked when the master is saved.
 
 `extend_series_to_horizon` is append-only: it adds children up to
-`now() + 30 days` without touching existing rows. It is invoked lazily
+`now() + horizon` without touching existing rows. It is invoked lazily
 from the admin changelist so the visible horizon stays rolling even
 when the master is not re-saved.
 """
@@ -23,7 +24,14 @@ from django.db import transaction
 from django.db.models import Max
 from django.utils import timezone
 
+# Fallback used only when a master has no room (shouldn't happen in
+# normal data) — production rows always pull from `room.horizon_days`.
 HORIZON_DAYS = 30
+
+
+def _horizon_for(master) -> int:
+    room = getattr(master, "room", None)
+    return getattr(room, "horizon_days", None) or HORIZON_DAYS
 
 
 def _allowed_weekdays(mask: int) -> set[int]:
@@ -97,7 +105,7 @@ def regenerate_series(master) -> None:
         return
 
     delta = timedelta(seconds=interval)
-    horizon = master.starting_time + timedelta(days=HORIZON_DAYS)
+    horizon = master.starting_time + timedelta(days=_horizon_for(master))
     late_reg_offset = master.late_reg_at - master.starting_time
     blind_levels = list(master.blind_levels.all())
     allowed = _allowed_weekdays(master.weekdays)
@@ -129,7 +137,7 @@ def extend_series_to_horizon(master, *, now: datetime | None = None) -> int:
 
     now = now or timezone.now()
     delta = timedelta(seconds=interval)
-    horizon = now + timedelta(days=HORIZON_DAYS)
+    horizon = now + timedelta(days=_horizon_for(master))
 
     last_child_start = Tournament.objects.filter(series_master=master).aggregate(
         last=Max("starting_time")

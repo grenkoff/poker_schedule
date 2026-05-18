@@ -14,10 +14,10 @@ class NetworkAdmin(StaffAdminMixin, admin.ModelAdmin):
 
 @admin.register(PokerRoom)
 class PokerRoomAdmin(StaffAdminMixin, admin.ModelAdmin):
-    list_display = ("name", "network", "slug", "is_active", "website")
+    list_display = ("name", "network", "slug", "horizon_days", "is_active", "website")
     list_filter = ("network", "is_active")
     search_fields = ("name", "slug")
-    list_editable = ("is_active",)
+    list_editable = ("is_active", "horizon_days")
     prepopulated_fields = {"slug": ("name",)}
     autocomplete_fields = ("network",)
-    fields = ("name", "slug", "network", "website", "image", "is_active")
+    fields = ("name", "slug", "network", "website", "image", "horizon_days", "is_active")
