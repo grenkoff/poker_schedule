@@ -1,16 +1,16 @@
 {% extends "admin/submit_line.html" %}
 {% load i18n admin_urls %}
 
-{# Re-render the whole submit row so we can drop a `Save and add same`
-   button in the middle of the standard sequence. Order matches Django
-   defaults with our extras inserted in the right spots. #}
+{% comment %}
+Re-render the whole submit row so we can drop a `Save and add same`
+button in the middle of the standard sequence. Order matches Django
+defaults with our extras inserted in the right spots.
+{% endcomment %}
 {% block submit-row %}
 {% if show_save %}<input type="submit" value="{% translate 'Save' %}" class="default" name="_save">{% endif %}
 {% if show_save_as_new %}<input type="submit" value="{% translate 'Save as new' %}" name="_saveasnew">{% endif %}
 {% if show_save_and_add_another %}<input type="submit" value="{% translate 'Save and add another' %}" name="_addanother">{% endif %}
-{# Custom button: clone the current tournament and open the clone for
-   editing. Visible on both /add/ and /change/, since cloning makes
-   sense either way. #}
+{% comment %}Custom button: clone the current tournament and open the clone for editing. Visible on both /add/ and /change/.{% endcomment %}
 <input type="submit" value="{% translate 'Save and add same' %}" name="_addsame">
 {% if show_save_and_continue %}<input type="submit" value="{% if can_change %}{% translate 'Save and continue editing' %}{% else %}{% translate 'Save and view' %}{% endif %}" name="_continue">{% endif %}
 {% if show_close %}
