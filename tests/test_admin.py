@@ -217,3 +217,151 @@ def test_admin_changelist_extends_recurring_series(admin_client):
     )
     assert future_children.exists()
     assert future_children.count() >= 28  # ~30 days at daily cadence, give slack for boundaries
+
+
+# --- Save and add same ----------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_clone_helper_copies_form_fields_and_blind_levels(tournament_with_children):
+    from apps.tournaments.admin import TournamentAdmin
+
+    BlindStructure.objects.create(
+        tournament=tournament_with_children, level=2, small_blind=50, big_blind=100
+    )
+    admin_instance = TournamentAdmin(Tournament, None)
+    clone = admin_instance._clone_tournament(tournament_with_children)
+
+    assert clone.pk != tournament_with_children.pk
+    # Every form-level field is preserved.
+    for attr in (
+        "room_id",
+        "series_id",
+        "name",
+        "game_type",
+        "buy_in_total",
+        "guaranteed_dollars",
+        "payout_percent",
+        "starting_stack",
+        "starting_time",
+        "late_reg_at",
+        "late_reg_level",
+        "blind_interval_minutes",
+        "break_minutes",
+        "players_per_table",
+        "min_players",
+        "max_players",
+        "re_entry_id",
+        "bubble_id",
+        "periodicity_id",
+        "weekdays",
+        "early_bird",
+        "early_bird_type_id",
+        "featured_final_table",
+    ):
+        assert getattr(clone, attr) == getattr(tournament_with_children, attr), attr
+
+    # Blind levels copied 1-to-1.
+    src_levels = list(
+        tournament_with_children.blind_levels.order_by("level").values(
+            "level", "small_blind", "big_blind", "ante"
+        )
+    )
+    clone_levels = list(
+        clone.blind_levels.order_by("level").values("level", "small_blind", "big_blind", "ante")
+    )
+    assert src_levels == clone_levels
+
+
+@pytest.mark.django_db
+def test_clone_strips_series_master_and_resets_verification(tournament_with_children):
+    from apps.tournaments.admin import TournamentAdmin
+
+    # Pretend the source was both verified and a child of some series.
+    other_master = Tournament.objects.create(
+        **{
+            **{
+                f.name: getattr(tournament_with_children, f.name)
+                for f in Tournament._meta.concrete_fields
+                if f.name not in {"id", "series_master"}
+            },
+            "name": "Other Master",
+        }
+    )
+    tournament_with_children.series_master = other_master
+    tournament_with_children.verified_by_admin = True
+    tournament_with_children.save(update_fields=["series_master", "verified_by_admin"])
+
+    admin_instance = TournamentAdmin(Tournament, None)
+    clone = admin_instance._clone_tournament(tournament_with_children)
+
+    assert clone.series_master_id is None
+    assert clone.verified_by_admin is False
+
+
+@pytest.mark.django_db
+def test_save_and_add_same_redirects_to_change_view(admin_client, tournament_with_children):
+    """POSTing the change form with `_addsame` saves the source, clones
+    it, and redirects to the clone's change page."""
+    src = tournament_with_children
+    # TournamentAdmin hides the legacy "default" series from the dropdown,
+    # so the fixture's series fails form validation. Reassign to a real
+    # Pokerok series (any of the 24 seeded ones works).
+    real_series = TournamentSeries.objects.filter(room=src.room).exclude(slug="default").first()
+    src.series = real_series
+    src.save(update_fields=["series"])
+    url = f"/admin/tournaments/tournament/{src.pk}/change/"
+    response = admin_client.post(
+        url,
+        data={
+            "room": str(src.room_id),
+            "series": str(src.series_id),
+            "name": src.name,
+            "game_type": src.game_type,
+            "buy_in_without_rake": "50.00",
+            "rake": "5.00",
+            "guaranteed_dollars": str(src.guaranteed_dollars),
+            "payout_percent": str(src.payout_percent),
+            "starting_stack": str(src.starting_stack),
+            "starting_stack_bb": str(src.starting_stack_bb),
+            "timezone": src.timezone,
+            "late_registration_available": "on",
+            "starting_time_0": src.starting_time.strftime("%d.%m.%Y"),
+            "starting_time_1": src.starting_time.strftime("%H:%M"),
+            "late_reg_at_0": src.late_reg_at.strftime("%d.%m.%Y"),
+            "late_reg_at_1": src.late_reg_at.strftime("%H:%M"),
+            "late_reg_level": str(src.late_reg_level),
+            "blind_interval_minutes": str(src.blind_interval_minutes),
+            "break_minutes": str(src.break_minutes),
+            "players_per_table": str(src.players_per_table),
+            "players_at_final_table": str(src.players_at_final_table),
+            "min_players": str(src.min_players),
+            "max_players": str(src.max_players),
+            "re_entry": str(src.re_entry_id),
+            "bubble": str(src.bubble_id),
+            "periodicity": str(src.periodicity_id),
+            "weekdays": [str(i) for i in range(7) if src.weekdays & (1 << i)],
+            "early_bird": "",
+            "early_bird_type": str(src.early_bird_type_id),
+            "featured_final_table": "",
+            "blind_levels-TOTAL_FORMS": "1",
+            "blind_levels-INITIAL_FORMS": "1",
+            "blind_levels-MIN_NUM_FORMS": "1",
+            "blind_levels-MAX_NUM_FORMS": "1000",
+            "blind_levels-0-id": str(src.blind_levels.first().pk),
+            "blind_levels-0-tournament": str(src.pk),
+            "blind_levels-0-level": "1",
+            "blind_levels-0-small_blind": "25",
+            "blind_levels-0-big_blind": "50",
+            "blind_levels-0-ante": "",
+            "_addsame": "1",
+        },
+    )
+    assert response.status_code == 302
+    # Source still exists, plus a clone with a higher PK.
+    assert Tournament.objects.filter(pk=src.pk).exists()
+    clone_pk = int(response["Location"].rstrip("/").rsplit("/", 2)[-2])
+    assert clone_pk != src.pk
+    clone = Tournament.objects.get(pk=clone_pk)
+    assert clone.name == src.name
+    assert clone.blind_levels.count() == 1
