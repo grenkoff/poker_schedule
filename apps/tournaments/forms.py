@@ -248,6 +248,9 @@ def _timezone_choices() -> list[tuple[str, str]]:
     return [(name, label) for _, label, name in rows]
 
 
+_BLIND_INPUT_WIDTH = "width: 10em;"
+
+
 class _BlindRowFormMixin:
     """Shared init for the two blind-level inline forms.
 
@@ -261,7 +264,14 @@ class _BlindRowFormMixin:
         super().__init__(*args, **kwargs)
         self.fields["ante"].required = False
         self.fields["ante"].initial = None
-        self.fields["small_blind"].widget.attrs.update(_GREY_READONLY)
+        # SB/BB/ante regularly hold 7-8 digit values in high-stakes
+        # structures; the default ~10ch width clips them. Roughly 2x
+        # the admin default.
+        self.fields["big_blind"].widget.attrs["style"] = _BLIND_INPUT_WIDTH
+        self.fields["ante"].widget.attrs["style"] = _BLIND_INPUT_WIDTH
+        sb_attrs = dict(_GREY_READONLY)
+        sb_attrs["style"] = sb_attrs["style"] + " " + _BLIND_INPUT_WIDTH
+        self.fields["small_blind"].widget.attrs.update(sb_attrs)
 
     def clean_ante(self):
         return self.cleaned_data.get("ante") or 0
