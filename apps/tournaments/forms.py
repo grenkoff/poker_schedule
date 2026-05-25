@@ -367,6 +367,10 @@ class TournamentAdminForm(forms.ModelForm):
 
     class Media:
         js = (
+            # integer_thousand_seps must load BEFORE blind_levels_autonumber
+            # so it converts integer inputs to type=text before autonumber
+            # dispatches input events that the formatter listens for.
+            "admin/js/integer_thousand_seps.js",
             "admin/js/buyin_autofill.js",
             "admin/js/clear_required_errors.js",
             "admin/js/digits_only.js",

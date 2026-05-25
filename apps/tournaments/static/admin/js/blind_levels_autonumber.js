@@ -13,6 +13,21 @@
 
     var ROW_LEVEL_RE = /^blind_levels-(\d+)-level$/;
 
+    // integer_thousand_seps.js converts integer inputs to type=text and
+    // shows thousand separators (e.g. "10,000"). Parse those values by
+    // stripping commas first so derivations stay correct.
+    function parseIntStrip(s) {
+        return parseInt((s || "").replace(/,/g, ""), 10);
+    }
+
+    function setVal(input, raw) {
+        if (!input) return;
+        input.value = raw == null ? "" : String(raw);
+        // Trigger integer_thousand_seps's reformatter so the new value
+        // picks up commas when applicable.
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+
     function rowLevelInputs() {
         return Array.prototype.filter.call(
             document.querySelectorAll(
@@ -38,7 +53,7 @@
         var max = 0;
         rowLevelInputs().forEach(function (inp) {
             if (rowIsDeleted(inp)) return;
-            var v = parseInt(inp.value, 10);
+            var v = parseIntStrip(inp.value);
             if (!isNaN(v) && v > max) max = v;
         });
         return max;
@@ -48,7 +63,7 @@
         var inputs = rowLevelInputs();
         if (inputs.length === 0) return;
         var first = inputs[0];
-        if (!first.value) first.value = "1";
+        if (!first.value) setVal(first, "1");
     }
 
     function onRowAdded() {
@@ -61,7 +76,7 @@
             if (!rowIsDeleted(inp) && !inp.value) blank = inp;
         });
         if (!blank) return;
-        blank.value = String(maxExistingLevel() + 1);
+        setVal(blank, maxExistingLevel() + 1);
     }
 
     /* ----- big_blind / small_blind derivation ----------------------- */
@@ -80,22 +95,22 @@
     function recomputeSmallBlindFor(bigInput) {
         var sb = siblingInput(bigInput, "small_blind");
         if (!sb) return;
-        var v = parseInt(bigInput.value, 10);
-        sb.value = isNaN(v) ? "" : String(Math.floor(v / 2));
+        var v = parseIntStrip(bigInput.value);
+        setVal(sb, isNaN(v) ? "" : String(Math.floor(v / 2)));
     }
 
     function recomputeFirstRowBigBlind() {
         var stackInp = document.getElementById("id_starting_stack");
         var bbInp = document.getElementById("id_starting_stack_bb");
         if (!stackInp || !bbInp) return;
-        var stack = parseInt(stackInp.value, 10);
-        var bb = parseInt(bbInp.value, 10);
+        var stack = parseIntStrip(stackInp.value);
+        var bb = parseIntStrip(bbInp.value);
         var first = document.getElementById("id_blind_levels-0-big_blind");
         if (!first) return;
         if (isNaN(stack) || isNaN(bb) || bb <= 0) {
-            first.value = "";
+            setVal(first, "");
         } else {
-            first.value = String(Math.floor(stack / bb));
+            setVal(first, String(Math.floor(stack / bb)));
         }
         recomputeSmallBlindFor(first);
     }

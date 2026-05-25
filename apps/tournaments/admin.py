@@ -85,7 +85,11 @@ class BlindStructureTemplateAdmin(StaffAdminMixin, admin.ModelAdmin):
         # JS for the template editor. The first-row big_blind derivation
         # falls back to no-op (no starting_stack input on the page) and
         # leaves the editor free to type any number.
-        js = ("admin/js/blind_levels_autonumber.js",)
+        # integer_thousand_seps must load first — see TournamentAdminForm.Media.
+        js = (
+            "admin/js/integer_thousand_seps.js",
+            "admin/js/blind_levels_autonumber.js",
+        )
 
     @admin.display(description=_("levels"))
     def level_count(self, obj) -> int:

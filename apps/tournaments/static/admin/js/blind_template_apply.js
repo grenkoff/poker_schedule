@@ -41,6 +41,9 @@
     function setVal(input, value) {
         if (!input) return;
         input.value = value === null || value === undefined ? "" : String(value);
+        // Fire `input` so integer_thousand_seps.js reformats with
+        // commas (and any other listeners observe the new value).
+        input.dispatchEvent(new Event("input", { bubbles: true }));
     }
 
     function dispatch(input, evt) {
