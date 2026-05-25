@@ -850,6 +850,40 @@ def test_regenerate_series_respects_room_horizon(pokerok):
 
 
 @pytest.mark.django_db
+def test_extend_series_trims_children_beyond_shrunk_horizon(pokerok):
+    """Shrinking room.horizon_days drops children that now fall past it,
+    even without re-saving the master. Past children stay (historical)."""
+    from django.utils import timezone as djtz
+
+    pokerok.horizon_days = 30
+    pokerok.save(update_fields=["horizon_days"])
+    daily = Periodicity.objects.get(name="every_24_hours")
+    now = djtz.now()
+    master = _make_tournament(
+        pokerok,
+        periodicity=daily,
+        starting_time=now + timedelta(hours=1),
+        late_reg_at=now + timedelta(hours=2),
+    )
+    regenerate_series(master)
+    # 30 children initially.
+    assert Tournament.objects.filter(series_master=master).count() == 30
+
+    # Shrink to 7 days. extend_series_to_horizon should trim everything
+    # past now + 7 days.
+    pokerok.horizon_days = 7
+    pokerok.save(update_fields=["horizon_days"])
+    extend_series_to_horizon(master, now=now)
+    remaining = Tournament.objects.filter(series_master=master)
+    horizon = now + timedelta(days=7)
+    assert not remaining.filter(starting_time__gt=horizon).exists()
+    # Master starts at now + 1h, so children land at now + 1d+1h ...
+    # now + 7d+1h. Day 7's child sits 1h past the horizon and gets
+    # trimmed, leaving 6.
+    assert remaining.count() == 6
+
+
+@pytest.mark.django_db
 def test_extend_series_respects_room_horizon(pokerok):
     from django.utils import timezone as djtz
 
