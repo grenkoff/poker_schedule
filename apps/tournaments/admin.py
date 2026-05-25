@@ -1,5 +1,7 @@
 from django.contrib import admin
+from django.db import transaction
 from django.http import HttpResponseRedirect
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
@@ -219,6 +221,55 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         instance = form.instance
         if instance.series_master_id is None:
             regenerate_series(instance)
+
+    # --- "Save and add same" ---------------------------------------------
+
+    # Fields we never carry from the source tournament when cloning:
+    # `id` so the clone gets a fresh PK; `series_master` so the clone
+    # stands on its own (even if the source was a series child);
+    # `verified_by_admin` so the clone goes through verification again.
+    _CLONE_SKIP_FIELDS = frozenset({"id", "series_master", "verified_by_admin"})
+
+    @transaction.atomic
+    def _clone_tournament(self, source: Tournament) -> Tournament:
+        data = {
+            field.name: getattr(source, field.name)
+            for field in Tournament._meta.concrete_fields
+            if field.name not in self._CLONE_SKIP_FIELDS
+        }
+        data["verified_by_admin"] = False
+        clone = Tournament.objects.create(**data)
+        for level in source.blind_levels.all():
+            BlindStructure.objects.create(
+                tournament=clone,
+                level=level.level,
+                small_blind=level.small_blind,
+                big_blind=level.big_blind,
+                ante=level.ante,
+            )
+        # Mirror what `save_related` does for normal save paths: if the
+        # clone is a (new) recurring master, generate its children now.
+        if clone.periodicity and clone.periodicity.interval_seconds > 0:
+            regenerate_series(clone)
+        return clone
+
+    def _addsame_redirect(self, request, source):
+        clone = self._clone_tournament(source)
+        self.message_user(
+            request,
+            _("Cloned from “%(name)s” — edit the new tournament below.") % {"name": source.name},
+        )
+        return HttpResponseRedirect(reverse("admin:tournaments_tournament_change", args=[clone.pk]))
+
+    def response_add(self, request, obj, post_url_continue=None):
+        if "_addsame" in request.POST:
+            return self._addsame_redirect(request, obj)
+        return super().response_add(request, obj, post_url_continue)
+
+    def response_change(self, request, obj):
+        if "_addsame" in request.POST:
+            return self._addsame_redirect(request, obj)
+        return super().response_change(request, obj)
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
         if (
