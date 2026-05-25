@@ -1,5 +1,5 @@
-from django.contrib import admin
-from django.db import transaction
+from django.contrib import admin, messages
+from django.db import IntegrityError, transaction
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils import timezone
@@ -11,13 +11,16 @@ from apps.users.admin_mixins import StaffAdminMixin
 
 from .columns import ALL_COLUMNS, Column
 from .forms import (
+    BlindLevelTemplateInlineForm,
     BlindStructureInlineForm,
     PeriodicityWidget,
     TournamentAdminForm,
     TournamentSeriesWidget,
 )
 from .models import (
+    BlindLevelTemplate,
     BlindStructure,
+    BlindStructureTemplate,
     BubbleOption,
     DealMakingOption,
     EarlyBirdType,
@@ -59,6 +62,34 @@ class BlindStructureInline(admin.TabularInline):
     extra = 0
     min_num = 1
     fields = ("level", "small_blind", "big_blind", "ante")
+
+
+class BlindLevelTemplateInline(admin.TabularInline):
+    model = BlindLevelTemplate
+    form = BlindLevelTemplateInlineForm
+    extra = 0
+    min_num = 1
+    fields = ("level", "small_blind", "big_blind", "ante")
+
+
+@admin.register(BlindStructureTemplate)
+class BlindStructureTemplateAdmin(StaffAdminMixin, admin.ModelAdmin):
+    list_display = ("name", "level_count", "created_at")
+    search_fields = ("name", "description")
+    ordering = ("name",)
+    fields = ("name", "description")
+    inlines = (BlindLevelTemplateInline,)
+
+    class Media:
+        # Reuse the BlindStructure inline's autonumber + derive-small-blind
+        # JS for the template editor. The first-row big_blind derivation
+        # falls back to no-op (no starting_stack input on the page) and
+        # leaves the editor free to type any number.
+        js = ("admin/js/blind_levels_autonumber.js",)
+
+    @admin.display(description=_("levels"))
+    def level_count(self, obj) -> int:
+        return obj.levels.count()
 
 
 @admin.register(Tournament)
@@ -137,6 +168,20 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
                     "early_bird_type",
                     "featured_final_table",
                     "deal_making",
+                ),
+            },
+        ),
+        (
+            _("Blind structure template"),
+            {
+                "fields": (
+                    "apply_template",
+                    "save_as_template",
+                    "save_as_template_name",
+                ),
+                "description": _(
+                    "Optionally load an existing template into the BLIND LEVELS "
+                    "table below, or save the entered rows as a new template."
                 ),
             },
         ),
@@ -224,8 +269,61 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)
         instance = form.instance
+
+        # Ordering matters:
+        #   1. Apply template (overwrites the inline rows the editor
+        #      submitted) — so the editor's pick wins over typed rows.
+        #   2. Snapshot as a new template (captures the FINAL row set,
+        #      so "load X → tweak → save as Y" works in one submission).
+        #   3. Regenerate series children — so masters propagate the
+        #      template-derived rows down to children without needing
+        #      changes in `recurrence.py`.
+        apply_template = form.cleaned_data.get("apply_template")
+        if apply_template is not None:
+            apply_template.apply_to(instance)
+
+        if form.cleaned_data.get("save_as_template"):
+            requested = (form.cleaned_data.get("save_as_template_name") or "").strip()
+            name = requested or self._auto_template_name(instance)
+            try:
+                BlindStructureTemplate.create_from_tournament(
+                    instance,
+                    name=name,
+                    description=str(
+                        _("Saved from tournament '%(t)s'") % {"t": instance.name}
+                    ),
+                )
+                self.message_user(
+                    request,
+                    _("Saved blind structure as template '%(n)s'.") % {"n": name},
+                )
+            except IntegrityError:
+                self.message_user(
+                    request,
+                    _("Template name '%(n)s' already exists; not saved.")
+                    % {"n": name},
+                    level=messages.WARNING,
+                )
+
         if instance.series_master_id is None:
             regenerate_series(instance)
+
+    @staticmethod
+    def _auto_template_name(instance) -> str:
+        """Return a unique template name based on the tournament's name.
+
+        Used when the editor leaves "New template name" blank. Mirrors
+        the naming used by the data migration so the library stays
+        coherent regardless of how rows enter it.
+        """
+        base = (f"Like {instance.name}")[:120]
+        name = base
+        n = 2
+        while BlindStructureTemplate.objects.filter(name=name).exists():
+            suffix = f" ({n})"
+            name = (base[: 120 - len(suffix)]) + suffix
+            n += 1
+        return name
 
     # --- "Save and add same" ---------------------------------------------
 
