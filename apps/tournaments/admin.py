@@ -238,7 +238,14 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     def get_queryset(self, request):
         self._extend_recurring_series()
         qs = super().get_queryset(request)
-        return qs.filter(late_reg_at__gte=timezone.now())
+        # Hide expired children but keep series masters visible regardless
+        # of their original starting_time — otherwise child rows show a
+        # broken `series_master` link (master sits in DB but `get_object`
+        # uses this same queryset and returns 404).
+        from django.db.models import Q
+        return qs.filter(
+            Q(series_master__isnull=True) | Q(late_reg_at__gte=timezone.now())
+        )
 
     def _extend_recurring_series(self) -> None:
         masters = (
