@@ -278,7 +278,7 @@ class Tournament(models.Model):
         EarlyBirdType,
         on_delete=models.PROTECT,
         related_name="tournaments",
-        verbose_name=_("early bird type"),
+        verbose_name=_("early bird"),
         null=True,
         blank=True,
     )
