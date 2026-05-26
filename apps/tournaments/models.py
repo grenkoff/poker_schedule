@@ -269,12 +269,18 @@ class Tournament(models.Model):
     )
 
     # --- features -------------------------------------------------------
-    early_bird = models.BooleanField(_("early bird"))
+    # `early_bird` is no longer surfaced as its own checkbox in the
+    # admin — the form auto-derives it from `early_bird_type` (any value
+    # → True, blank → False). The DB column stays so existing filters,
+    # sort keys, columns and exports keep working without churn.
+    early_bird = models.BooleanField(_("early bird"), default=False)
     early_bird_type = models.ForeignKey(
         EarlyBirdType,
         on_delete=models.PROTECT,
         related_name="tournaments",
         verbose_name=_("early bird type"),
+        null=True,
+        blank=True,
     )
     featured_final_table = models.BooleanField(_("featured final table"))
     deal_making = models.ForeignKey(

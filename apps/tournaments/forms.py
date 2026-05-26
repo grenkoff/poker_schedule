@@ -374,7 +374,6 @@ class TournamentAdminForm(forms.ModelForm):
             "admin/js/buyin_autofill.js",
             "admin/js/clear_required_errors.js",
             "admin/js/digits_only.js",
-            "admin/js/early_bird_toggle.js",
             "admin/js/time_fieldset.js",
             "admin/js/blind_levels_autonumber.js",
             "admin/js/blind_template_apply.js",
@@ -410,7 +409,6 @@ class TournamentAdminForm(forms.ModelForm):
             "bubble",
             "periodicity",
             "weekdays",
-            "early_bird",
             "early_bird_type",
             "featured_final_table",
             "deal_making",
@@ -576,6 +574,10 @@ class TournamentAdminForm(forms.ModelForm):
         instance.buy_in_total = self.cleaned_data["buy_in_total"]
         instance.buy_in_without_rake = self.cleaned_data["buy_in_without_rake"]
         instance.rake = self.cleaned_data["rake"]
+        # Derive the `early_bird` boolean from the (now optional) type
+        # dropdown — picking any type means early-bird is active; leaving
+        # it blank means it's not.
+        instance.early_bird = bool(self.cleaned_data.get("early_bird_type"))
         if commit:
             instance.save()
             self.save_m2m()

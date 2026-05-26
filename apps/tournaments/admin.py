@@ -169,7 +169,6 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
             _("Features"),
             {
                 "fields": (
-                    "early_bird",
                     "early_bird_type",
                     "featured_final_table",
                     "deal_making",
