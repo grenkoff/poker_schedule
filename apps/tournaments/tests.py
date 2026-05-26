@@ -1063,6 +1063,37 @@ def _admin_post_payload(pokerok, **overrides) -> dict:
 
 
 @pytest.mark.django_db
+def test_admin_form_preselects_apply_template_matching_blind_levels(pokerok):
+    """On the change page for an existing tournament whose blind_levels
+    match a known template, that template should be the dropdown's
+    initial value (so the editor sees which template is in use)."""
+    from apps.tournaments.forms import TournamentAdminForm
+
+    matching = _make_template("Match probe", (1, 25, 50), (2, 50, 100))
+    tournament = _make_tournament(pokerok, name="Carries matching rows")
+    BlindStructure.objects.create(tournament=tournament, level=1, small_blind=25, big_blind=50)
+    BlindStructure.objects.create(tournament=tournament, level=2, small_blind=50, big_blind=100)
+
+    form = TournamentAdminForm(instance=tournament)
+    assert form.fields["apply_template"].initial == matching.pk
+
+
+@pytest.mark.django_db
+def test_admin_form_apply_template_initial_blank_when_no_match(pokerok):
+    """Tournaments whose structure has no matching template show a blank
+    initial — the editor isn't misled into thinking some unrelated
+    template is in use."""
+    from apps.tournaments.forms import TournamentAdminForm
+
+    _make_template("Unrelated", (1, 25, 50))
+    tournament = _make_tournament(pokerok, name="Distinct rows")
+    BlindStructure.objects.create(tournament=tournament, level=1, small_blind=9, big_blind=18)
+
+    form = TournamentAdminForm(instance=tournament)
+    assert form.fields["apply_template"].initial in (None, "")
+
+
+@pytest.mark.django_db
 def test_admin_form_save_as_template_is_valid_with_checkbox_only(pokerok):
     """The form no longer carries a user-typed template name — checking
     the box is sufficient; the name is auto-derived on save."""

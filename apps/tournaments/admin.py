@@ -336,7 +336,10 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         #      changes in `recurrence.py`.
         apply_template = form.cleaned_data.get("apply_template")
         if apply_template is not None:
-            apply_template.apply_to(instance)
+            current_sig = blind_signature(instance.blind_levels.all())
+            template_sig = blind_signature(apply_template.levels.all())
+            if current_sig != template_sig:
+                apply_template.apply_to(instance)
 
         if form.cleaned_data.get("save_as_template"):
             self._save_as_template(request, instance)

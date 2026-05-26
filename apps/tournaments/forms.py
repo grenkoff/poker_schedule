@@ -461,6 +461,19 @@ class TournamentAdminForm(forms.ModelForm):
                         if val and djtz.is_aware(val):
                             self.initial[fname] = val.astimezone(tz).replace(tzinfo=None)
 
+            # Preselect the existing template that matches this
+            # tournament's blind structure so the editor sees the name
+            # of the template they're effectively using. The save_related
+            # path skips a re-apply when the signature is already
+            # equal, so a no-op edit doesn't churn the inline rows.
+            from .models import blind_signature, template_id_for_signature
+
+            sig = blind_signature(self.instance.blind_levels.all())
+            if sig:
+                matched = template_id_for_signature(sig)
+                if matched is not None:
+                    self.fields["apply_template"].initial = matched
+
         # Late-reg fields are conditionally required: the checkbox state
         # decides. On a bound submission with the checkbox unchecked, the
         # date/time/level inputs may be blank — drop their `required`
