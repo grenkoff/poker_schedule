@@ -21,11 +21,5 @@ defaults with our extras inserted in the right spots.
     {% url opts|admin_urlname:'delete' original.pk|admin_urlquote as delete_url %}
     <a href="{% add_preserved_filters delete_url %}" class="deletelink">{% translate "Delete" %}</a>
 {% endif %}
-{% if show_unverify_button %}
-    <p class="deletelink-box" style="float:left;margin-right:10px;">
-      <button type="submit" name="_unverify" class="button">
-        {% translate "Return for editing" %}
-      </button>
-    </p>
-{% endif %}
+{% if show_unverify_button %}<input type="submit" value="{% translate 'Return for editing' %}" name="_unverify">{% endif %}
 {% endblock %}

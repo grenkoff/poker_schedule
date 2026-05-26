@@ -1,0 +1,45 @@
+/* Tighten the blind-level inlines (BlindStructure on Tournament and
+ * BlindLevelTemplate on BlindStructureTemplate).
+ *
+ * 1. Hide the per-row "original" cell entirely. Django uses it to show
+ *    the model's `__str__` (e.g. "L1: 50/100"), which just duplicates
+ *    the input cells. Hidden form inputs inside this <td> stay in the
+ *    DOM and still submit normally — `display: none` only hides the
+ *    cell visually.
+ * 2. Shrink the vertical padding on the remaining cells so the row
+ *    height matches the input height instead of leaving a tall blank
+ *    band where the label used to live. */
+#blind_levels-group td.original,
+#blind_levels-group th.original,
+#levels-group td.original,
+#levels-group th.original {
+    display: none;
+}
+
+#blind_levels-group .tabular td,
+#blind_levels-group .tabular th,
+#levels-group .tabular td,
+#levels-group .tabular th {
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+
+/* Django styles the "remove this new row" X (`<a class="inline-deletelink">`)
+ * with `float: right`. Combined with our tightened row padding the
+ * 16x16 link overflows the bottom of its (short) cell, landing below
+ * the DELETE checkboxes of saved rows. Drop the float and center the
+ * link inside `td.delete` so the column reads consistently across
+ * saved vs. just-added rows. */
+#blind_levels-group .tabular .inline-deletelink,
+#levels-group .tabular .inline-deletelink {
+    float: none;
+    display: inline-block;
+    vertical-align: middle;
+    margin: 0;
+}
+
+#blind_levels-group .tabular td.delete,
+#levels-group .tabular td.delete {
+    text-align: center;
+    vertical-align: middle;
+}

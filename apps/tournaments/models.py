@@ -1,5 +1,5 @@
 from django.core.validators import MaxValueValidator, MinValueValidator
-from django.db import models
+from django.db import models, transaction
 from django.utils.translation import gettext_lazy as _
 
 from apps.rooms.models import PokerRoom
@@ -269,12 +269,18 @@ class Tournament(models.Model):
     )
 
     # --- features -------------------------------------------------------
-    early_bird = models.BooleanField(_("early bird"))
+    # `early_bird` is no longer surfaced as its own checkbox in the
+    # admin — the form auto-derives it from `early_bird_type` (any value
+    # → True, blank → False). The DB column stays so existing filters,
+    # sort keys, columns and exports keep working without churn.
+    early_bird = models.BooleanField(_("early bird"), default=False)
     early_bird_type = models.ForeignKey(
         EarlyBirdType,
         on_delete=models.PROTECT,
         related_name="tournaments",
-        verbose_name=_("early bird type"),
+        verbose_name=_("early bird"),
+        null=True,
+        blank=True,
     )
     featured_final_table = models.BooleanField(_("featured final table"))
     deal_making = models.ForeignKey(
@@ -331,6 +337,88 @@ class BlindStructure(models.Model):
             models.UniqueConstraint(
                 fields=("tournament", "level"),
                 name="uniq_tournament_level",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"L{self.level}: {self.small_blind}/{self.big_blind}"
+
+
+class BlindStructureTemplate(models.Model):
+    """A named, reusable blind structure that can be applied to any
+    tournament. Apply copies the rows into the tournament's own
+    `blind_levels`; later edits to this template do NOT affect any
+    tournament that previously received its rows.
+    """
+
+    name = models.CharField(_("name"), max_length=120, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _("blind structure template")
+        verbose_name_plural = _("blind structure templates")
+        ordering = ("name",)
+
+    def __str__(self) -> str:
+        return self.name
+
+    @transaction.atomic
+    def apply_to(self, tournament) -> None:
+        # Destructive: caller treats template application as "load these
+        # rows in place of whatever the inline currently holds".
+        BlindStructure.objects.filter(tournament=tournament).delete()
+        BlindStructure.objects.bulk_create(
+            BlindStructure(
+                tournament=tournament,
+                level=row.level,
+                small_blind=row.small_blind,
+                big_blind=row.big_blind,
+                ante=row.ante,
+            )
+            for row in self.levels.all().order_by("level")
+        )
+
+    @classmethod
+    @transaction.atomic
+    def create_from_tournament(cls, tournament, *, name: str) -> "BlindStructureTemplate":
+        template = cls.objects.create(name=name)
+        BlindLevelTemplate.objects.bulk_create(
+            BlindLevelTemplate(
+                template=template,
+                level=row.level,
+                small_blind=row.small_blind,
+                big_blind=row.big_blind,
+                ante=row.ante,
+            )
+            for row in tournament.blind_levels.all().order_by("level")
+        )
+        return template
+
+
+class BlindLevelTemplate(models.Model):
+    """One row of a BlindStructureTemplate. Mirrors BlindStructure but
+    is owned by a reusable template instead of a specific tournament."""
+
+    template = models.ForeignKey(
+        BlindStructureTemplate,
+        on_delete=models.CASCADE,
+        related_name="levels",
+        verbose_name=_("template"),
+    )
+    level = models.PositiveSmallIntegerField(_("level"))
+    small_blind = models.PositiveIntegerField(_("small blind"))
+    big_blind = models.PositiveIntegerField(_("big blind"))
+    ante = models.PositiveIntegerField(_("ante"), default=0)
+
+    class Meta:
+        verbose_name = _("blind level (template)")
+        verbose_name_plural = _("blind levels (template)")
+        ordering = ("template", "level")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("template", "level"),
+                name="uniq_template_level",
             ),
         ]
 

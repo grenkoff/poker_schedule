@@ -8,6 +8,7 @@ ignored server-side.
 
 from __future__ import annotations
 
+import json
 import zoneinfo
 from decimal import Decimal
 
@@ -20,7 +21,7 @@ from django.contrib.admin.widgets import (
 from django.utils import timezone as djtz
 from django.utils.translation import gettext_lazy as _
 
-from .models import BlindStructure, Tournament
+from .models import BlindLevelTemplate, BlindStructure, BlindStructureTemplate, Tournament
 
 _GREY_READONLY = {
     "readonly": "readonly",
@@ -139,6 +140,46 @@ class TournamentSeriesWidget(forms.Select):
         return option
 
 
+class BlindStructureTemplateWidget(forms.Select):
+    """Template Select that tags each <option> with `data-levels="[...]"`.
+
+    The Tournament admin form's prefill JS reads this attribute off the
+    selected option and replaces the BLIND LEVELS inline rows with the
+    template's rows. Template payloads are small (a few dozen ints), so
+    embedding them on the page is cheaper than an AJAX round-trip and
+    avoids a race with the inline-formset add/remove machinery.
+    """
+
+    def __init__(self, attrs=None):
+        merged = {"data-tnmt-template": "1", **(attrs or {})}
+        super().__init__(attrs=merged)
+        self._levels_map: dict[int, list[list[int]]] | None = None
+
+    def _levels(self) -> dict[int, list[list[int]]]:
+        if self._levels_map is None:
+            rows = BlindLevelTemplate.objects.order_by("template_id", "level").values_list(
+                "template_id",
+                "level",
+                "small_blind",
+                "big_blind",
+                "ante",
+            )
+            by_tpl: dict[int, list[list[int]]] = {}
+            for tpl_id, level, sb, bb, ante in rows:
+                by_tpl.setdefault(tpl_id, []).append([level, sb, bb, ante])
+            self._levels_map = by_tpl
+        return self._levels_map
+
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex, attrs)
+        pk = getattr(value, "value", value)
+        if pk not in (None, ""):
+            levels = self._levels().get(int(pk))
+            if levels is not None:
+                option["attrs"]["data-levels"] = json.dumps(levels)
+        return option
+
+
 class _TournamentDateWidget(BaseAdminDateWidget):
     """`dd.mm.yyyy` date input that still pulls in admin calendar JS.
 
@@ -211,29 +252,45 @@ def _timezone_choices() -> list[tuple[str, str]]:
     return [(name, label) for _, label, name in rows]
 
 
-class BlindStructureInlineForm(forms.ModelForm):
-    """Custom inline form so the `ante` field renders blank instead of `0`.
+_BLIND_INPUT_WIDTH = "width: 10em;"
 
-    The model still defaults to `0`, so an empty submission saves as `0` —
-    we just don't pre-fill the input.
+
+class _BlindRowFormMixin:
+    """Shared init for the two blind-level inline forms.
+
+    Both `BlindStructure` (per-tournament rows) and `BlindLevelTemplate`
+    (reusable template rows) share the same column shape and UX: ante
+    starts blank instead of zero, and `small_blind` is read-only because
+    it's derived from `big_blind` client-side via JS.
     """
-
-    class Meta:
-        model = BlindStructure
-        fields = ("level", "small_blind", "big_blind", "ante")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["ante"].required = False
         self.fields["ante"].initial = None
-        # `small_blind` is always derived from `big_blind` via JS — never
-        # user-editable. The first row's `big_blind` is also derived
-        # (from the parent tournament's starting stack / BB count); the
-        # JS hook adds readonly to that single input at runtime.
-        self.fields["small_blind"].widget.attrs.update(_GREY_READONLY)
+        # SB/BB/ante regularly hold 7-8 digit values in high-stakes
+        # structures; the default ~10ch width clips them. Roughly 2x
+        # the admin default.
+        self.fields["big_blind"].widget.attrs["style"] = _BLIND_INPUT_WIDTH
+        self.fields["ante"].widget.attrs["style"] = _BLIND_INPUT_WIDTH
+        sb_attrs = dict(_GREY_READONLY)
+        sb_attrs["style"] = sb_attrs["style"] + " " + _BLIND_INPUT_WIDTH
+        self.fields["small_blind"].widget.attrs.update(sb_attrs)
 
     def clean_ante(self):
         return self.cleaned_data.get("ante") or 0
+
+
+class BlindStructureInlineForm(_BlindRowFormMixin, forms.ModelForm):
+    class Meta:
+        model = BlindStructure
+        fields = ("level", "small_blind", "big_blind", "ante")
+
+
+class BlindLevelTemplateInlineForm(_BlindRowFormMixin, forms.ModelForm):
+    class Meta:
+        model = BlindLevelTemplate
+        fields = ("level", "small_blind", "big_blind", "ante")
 
 
 class TournamentAdminForm(forms.ModelForm):
@@ -288,18 +345,43 @@ class TournamentAdminForm(forms.ModelForm):
         help_text=_("Auto-computed from late registration time minus starting time."),
     )
     weekdays = WeekdaysBitmaskField(label=_("Active weekdays"))
+    apply_template = forms.ModelChoiceField(
+        label=_("Load from existing blind structure"),
+        queryset=BlindStructureTemplate.objects.all().order_by("name"),
+        required=False,
+        widget=BlindStructureTemplateWidget(),
+        help_text=_(
+            "Pick a saved template to replace the BLIND LEVELS rows below "
+            "with its rows. The template itself is unaffected by later "
+            "edits to this tournament."
+        ),
+    )
+    save_as_template = forms.BooleanField(
+        label=_("Save current blind structure as a new template"),
+        required=False,
+    )
+    save_as_template_name = forms.CharField(
+        label=_("New template name"),
+        max_length=120,
+        required=False,
+        help_text=_("Leave blank to auto-name it after this tournament."),
+    )
 
     class Media:
         js = (
+            # integer_thousand_seps must load BEFORE blind_levels_autonumber
+            # so it converts integer inputs to type=text before autonumber
+            # dispatches input events that the formatter listens for.
+            "admin/js/integer_thousand_seps.js",
             "admin/js/buyin_autofill.js",
             "admin/js/clear_required_errors.js",
             "admin/js/digits_only.js",
-            "admin/js/early_bird_toggle.js",
             "admin/js/time_fieldset.js",
             "admin/js/blind_levels_autonumber.js",
+            "admin/js/blind_template_apply.js",
             "admin/js/weekdays_presets.js",
         )
-        css = {"all": ("admin/css/tournament_form.css",)}
+        css = {"all": ("admin/css/tournament_form.css", "admin/css/blind_inline.css")}
 
     class Meta:
         model = Tournament
@@ -329,7 +411,6 @@ class TournamentAdminForm(forms.ModelForm):
             "bubble",
             "periodicity",
             "weekdays",
-            "early_bird",
             "early_bird_type",
             "featured_final_table",
             "deal_making",
@@ -477,6 +558,17 @@ class TournamentAdminForm(forms.ModelForm):
                     "weekdays",
                     _("Starting time falls on a weekday that isn't selected."),
                 )
+
+        # When `save_as_template` is checked, validate the supplied name
+        # only if non-empty; the admin's `_auto_template_name` will fill
+        # in a default otherwise.
+        if cleaned.get("save_as_template"):
+            name = (cleaned.get("save_as_template_name") or "").strip()
+            if name and BlindStructureTemplate.objects.filter(name=name).exists():
+                self.add_error(
+                    "save_as_template_name",
+                    _("A template with that name already exists."),
+                )
         return cleaned
 
     def save(self, commit=True):
@@ -484,6 +576,10 @@ class TournamentAdminForm(forms.ModelForm):
         instance.buy_in_total = self.cleaned_data["buy_in_total"]
         instance.buy_in_without_rake = self.cleaned_data["buy_in_without_rake"]
         instance.rake = self.cleaned_data["rake"]
+        # Derive the `early_bird` boolean from the (now optional) type
+        # dropdown — picking any type means early-bird is active; leaving
+        # it blank means it's not.
+        instance.early_bird = bool(self.cleaned_data.get("early_bird_type"))
         if commit:
             instance.save()
             self.save_m2m()

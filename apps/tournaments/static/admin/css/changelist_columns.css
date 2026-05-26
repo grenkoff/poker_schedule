@@ -5,6 +5,14 @@
     max-height: none;
 }
 
+/* Django's `#searchbar { flex: 1 }` lets the input shrink to its min-
+ * content size when the toolbar is narrow. A min-width keeps the field
+ * usable instead of collapsing to a sliver between the icon and the
+ * Search button. */
+#changelist-search #searchbar {
+    min-width: 220px;
+}
+
 /* ---- Wide-table UX: page-level scroll + sticky header + sticky col --- */
 
 /* X-only scroll container. `overflow-y: clip` survives normalization in

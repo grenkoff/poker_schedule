@@ -8,7 +8,9 @@ from django.db import IntegrityError
 
 from apps.rooms.models import PokerRoom
 from apps.tournaments.models import (
+    BlindLevelTemplate,
     BlindStructure,
+    BlindStructureTemplate,
     BubbleOption,
     EarlyBirdType,
     GameType,
@@ -909,3 +911,285 @@ def test_extend_series_respects_room_horizon(pokerok):
     # slack but ensure the room-scoped horizon is being honoured.
     assert created <= 10
     assert created > 0
+
+
+# --- blind structure templates ------------------------------------------
+
+
+def _make_template(name: str, *rows) -> BlindStructureTemplate:
+    """Create a template with the given rows.
+
+    `rows` is a sequence of `(level, sb, bb)` or `(level, sb, bb, ante)`
+    tuples. Returned template's `.levels` ordering matches input order.
+    """
+    template = BlindStructureTemplate.objects.create(name=name)
+    for row in rows:
+        ante = row[3] if len(row) == 4 else 0
+        BlindLevelTemplate.objects.create(
+            template=template,
+            level=row[0],
+            small_blind=row[1],
+            big_blind=row[2],
+            ante=ante,
+        )
+    return template
+
+
+@pytest.mark.django_db
+def test_template_apply_to_copies_rows_into_tournament(pokerok):
+    tournament = _make_tournament(pokerok)
+    template = _make_template("Std", (1, 25, 50), (2, 50, 100), (3, 75, 150, 25))
+    template.apply_to(tournament)
+    rows = list(
+        tournament.blind_levels.order_by("level").values_list(
+            "level", "small_blind", "big_blind", "ante"
+        )
+    )
+    assert rows == [(1, 25, 50, 0), (2, 50, 100, 0), (3, 75, 150, 25)]
+
+
+@pytest.mark.django_db
+def test_template_apply_to_replaces_existing_rows(pokerok):
+    tournament = _make_tournament(pokerok)
+    for i in range(1, 6):
+        BlindStructure.objects.create(
+            tournament=tournament, level=i, small_blind=i, big_blind=i * 2
+        )
+    template = _make_template("Short", (1, 100, 200), (2, 200, 400))
+    template.apply_to(tournament)
+    assert tournament.blind_levels.count() == 2
+    rows = list(tournament.blind_levels.order_by("level").values_list("big_blind", flat=True))
+    assert rows == [200, 400]
+
+
+@pytest.mark.django_db
+def test_template_apply_to_idempotent(pokerok):
+    tournament = _make_tournament(pokerok)
+    template = _make_template("Std", (1, 25, 50), (2, 50, 100))
+    template.apply_to(tournament)
+    first = list(
+        tournament.blind_levels.order_by("level").values_list(
+            "level", "small_blind", "big_blind", "ante"
+        )
+    )
+    template.apply_to(tournament)
+    second = list(
+        tournament.blind_levels.order_by("level").values_list(
+            "level", "small_blind", "big_blind", "ante"
+        )
+    )
+    assert first == second
+    assert len(second) == 2
+
+
+@pytest.mark.django_db
+def test_template_create_from_tournament_snapshots_rows(pokerok):
+    tournament = _make_tournament(pokerok)
+    BlindStructure.objects.create(tournament=tournament, level=1, small_blind=10, big_blind=20)
+    BlindStructure.objects.create(
+        tournament=tournament, level=2, small_blind=20, big_blind=40, ante=5
+    )
+    template = BlindStructureTemplate.create_from_tournament(tournament, name="From T")
+    rows = list(
+        template.levels.order_by("level").values_list("level", "small_blind", "big_blind", "ante")
+    )
+    assert rows == [(1, 10, 20, 0), (2, 20, 40, 5)]
+
+
+@pytest.mark.django_db
+def test_template_create_from_tournament_unique_name(pokerok):
+    tournament = _make_tournament(pokerok)
+    BlindStructure.objects.create(tournament=tournament, level=1, small_blind=10, big_blind=20)
+    BlindStructureTemplate.create_from_tournament(tournament, name="Dup")
+    with pytest.raises(IntegrityError):
+        BlindStructureTemplate.create_from_tournament(tournament, name="Dup")
+
+
+@pytest.mark.django_db
+def test_template_edits_do_not_affect_previously_applied_tournament(pokerok):
+    tournament = _make_tournament(pokerok)
+    template = _make_template("Std", (1, 25, 50), (2, 50, 100))
+    template.apply_to(tournament)
+    # Mutate the template after applying.
+    template.levels.all().delete()
+    BlindLevelTemplate.objects.create(template=template, level=1, small_blind=999, big_blind=9999)
+    tournament.refresh_from_db()
+    rows = list(
+        tournament.blind_levels.order_by("level").values_list("level", "small_blind", "big_blind")
+    )
+    assert rows == [(1, 25, 50), (2, 50, 100)]
+
+
+def _admin_post_payload(pokerok, **overrides) -> dict:
+    """Base POST body for TournamentAdminForm submissions in tests.
+
+    The inline formset isn't included here — individual tests append
+    the `blind_levels-*` keys themselves so they can vary the row set.
+    """
+    base = {
+        "room": str(pokerok.pk),
+        "series": str(_default_series(pokerok).pk),
+        "name": "TPL Tournament",
+        "game_type": GameType.NLHE,
+        "buy_in_without_rake": "10.00",
+        "rake": "1.00",
+        "guaranteed_dollars": "100",
+        "payout_percent": "15",
+        "starting_stack": "10000",
+        "starting_stack_bb": "50",
+        "timezone": "UTC",
+        "late_registration_available": "on",
+        "starting_time_0": "01.05.2026",
+        "starting_time_1": "19:00",
+        "late_reg_at_0": "01.05.2026",
+        "late_reg_at_1": "20:00",
+        "late_reg_level": "12",
+        "blind_interval_minutes": "10",
+        "break_minutes": "5",
+        "players_per_table": "9",
+        "players_at_final_table": "9",
+        "min_players": "2",
+        "max_players": "1000",
+        "re_entry": str(ReEntryOption.objects.get(name="unlimited").pk),
+        "bubble": str(BubbleOption.objects.get(name="finalized_when_registration_closes").pk),
+        "periodicity": str(Periodicity.objects.get(name="one_off").pk),
+        "weekdays": ["0", "1", "2", "3", "4", "5", "6"],
+        "early_bird": "",
+        "early_bird_type": str(EarlyBirdType.objects.get(name="compensated_at_bubble").pk),
+        "featured_final_table": "",
+    }
+    base.update(overrides)
+    return base
+
+
+@pytest.mark.django_db
+def test_admin_form_save_as_template_validation_rejects_collision(pokerok):
+    from apps.tournaments.forms import TournamentAdminForm
+
+    BlindStructureTemplate.objects.create(name="Z")
+    data = _admin_post_payload(
+        pokerok,
+        save_as_template="on",
+        save_as_template_name="Z",
+    )
+    form = TournamentAdminForm(data=data)
+    assert not form.is_valid()
+    assert "save_as_template_name" in form.errors
+
+
+@pytest.mark.django_db
+def test_admin_form_save_as_template_allows_blank_name(pokerok):
+    from apps.tournaments.forms import TournamentAdminForm
+
+    data = _admin_post_payload(
+        pokerok,
+        save_as_template="on",
+        save_as_template_name="",
+    )
+    form = TournamentAdminForm(data=data)
+    assert form.is_valid(), form.errors
+
+
+@pytest.mark.django_db
+def test_recurring_children_inherit_template_when_applied_before_regenerate(pokerok):
+    """The recurrence helper copies whatever blind_levels the master has
+    at the time of the call. `TournamentAdmin.save_related` orders the
+    operations as `apply_template → regenerate_series`, so children must
+    pick up the template's rows."""
+    daily = Periodicity.objects.get(name="every_24_hours")
+    master = _make_tournament(pokerok, periodicity=daily, name="MasterT")
+
+    template = _make_template("DailyT", (1, 25, 50), (2, 50, 100), (3, 75, 150))
+    template.apply_to(master)
+    regenerate_series(master)
+
+    children = Tournament.objects.filter(series_master=master)
+    assert children.exists()
+    for child in children:
+        rows = list(child.blind_levels.order_by("level").values_list("level", "big_blind"))
+        assert rows == [(1, 50), (2, 100), (3, 150)]
+
+
+@pytest.mark.django_db
+def test_admin_auto_template_name_handles_collisions(pokerok):
+    from apps.tournaments.admin import TournamentAdmin
+
+    master = _make_tournament(pokerok, name="Daily Bounty")
+    BlindStructureTemplate.objects.create(name="Like Daily Bounty")
+    BlindStructureTemplate.objects.create(name="Like Daily Bounty (2)")
+    name = TournamentAdmin._auto_template_name(master)
+    assert name == "Like Daily Bounty (3)"
+
+
+@pytest.mark.django_db
+def test_template_widget_embeds_data_levels_on_options():
+    _make_template("WidgetTpl", (1, 25, 50), (2, 50, 100, 10))
+    from apps.tournaments.forms import BlindStructureTemplateWidget
+
+    widget = BlindStructureTemplateWidget()
+    widget.choices = [(t.pk, t.name) for t in BlindStructureTemplate.objects.all()]
+    rendered = widget.render(
+        "apply_template",
+        None,
+        attrs={"id": "id_apply_template"},
+    )
+    assert "data-levels" in rendered
+    # Both level rows from WidgetTpl should be in the embedded JSON.
+    assert "[1, 25, 50, 0]" in rendered
+    assert "[2, 50, 100, 10]" in rendered
+
+
+@pytest.mark.django_db
+def test_extract_blind_templates_migration_runs_against_seeded_data(pokerok):
+    """Invoke the 0026 migration's `extract` against a freshly-seeded
+    fixture. Verifies dedup-by-signature, skip-empty, and the auto-name
+    "Like <tournament>" scheme."""
+    import importlib
+
+    mig = importlib.import_module("apps.tournaments.migrations.0026_extract_blind_templates")
+
+    # Three masters: A and B share a signature; C has its own; D has no
+    # blind_levels at all and must be skipped.
+    a = _make_tournament(pokerok, name="ShapeAlpha")
+    b = _make_tournament(
+        pokerok,
+        name="ShapeBeta",
+        starting_time=a.starting_time + timedelta(hours=1),
+        late_reg_at=a.late_reg_at + timedelta(hours=1),
+    )
+    c = _make_tournament(
+        pokerok,
+        name="ShapeGamma",
+        starting_time=a.starting_time + timedelta(hours=2),
+        late_reg_at=a.late_reg_at + timedelta(hours=2),
+    )
+    _ = _make_tournament(  # no blind_levels - should be skipped
+        pokerok,
+        name="ShapeDelta",
+        starting_time=a.starting_time + timedelta(hours=3),
+        late_reg_at=a.late_reg_at + timedelta(hours=3),
+    )
+    BlindStructure.objects.create(tournament=a, level=1, small_blind=25, big_blind=50)
+    BlindStructure.objects.create(tournament=b, level=1, small_blind=25, big_blind=50)
+    BlindStructure.objects.create(tournament=c, level=1, small_blind=100, big_blind=200)
+
+    # Wipe any templates the migration may have already created when the
+    # test DB was bootstrapped, so the post-conditions below are
+    # observable without ambiguity.
+    BlindStructureTemplate.objects.all().delete()
+
+    # `apps` arg in a migration is the historical model registry; using
+    # `django.apps.apps` exercises the same code path with live models,
+    # which is what's available in tests.
+    from django.apps import apps as live_apps
+
+    mig.extract(live_apps, schema_editor=None)
+
+    names = set(BlindStructureTemplate.objects.values_list("name", flat=True))
+    # Two unique signatures across A/B/C; "Like ShapeDelta" must NOT
+    # appear because that tournament had no blind_levels.
+    assert len(names) == 2
+    assert "Like ShapeDelta" not in names
+    # First master per signature wins → A's name, not B's.
+    assert "Like ShapeAlpha" in names
+    assert "Like ShapeGamma" in names
