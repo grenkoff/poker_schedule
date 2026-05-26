@@ -1111,14 +1111,219 @@ def test_recurring_children_inherit_template_when_applied_before_regenerate(poke
 
 
 @pytest.mark.django_db
-def test_admin_auto_template_name_handles_collisions(pokerok):
+def test_admin_auto_template_name_falls_back_for_empty_blind_levels(pokerok):
     from apps.tournaments.admin import TournamentAdmin
 
     master = _make_tournament(pokerok, name="Daily Bounty")
-    BlindStructureTemplate.objects.create(name="Like Daily Bounty")
-    BlindStructureTemplate.objects.create(name="Like Daily Bounty (2)")
     name = TournamentAdmin._auto_template_name(master)
-    assert name == "Like Daily Bounty (3)"
+    # No blind_levels on this tournament → fall back to the tournament name.
+    assert name == "Like Daily Bounty"
+
+
+@pytest.mark.django_db
+def test_admin_auto_template_name_returns_content_shape(pokerok):
+    """When blind_levels exist, the auto-name encodes first/last level."""
+    from apps.tournaments.admin import TournamentAdmin
+
+    master = _make_tournament(pokerok, name="Whatever")
+    BlindStructure.objects.create(tournament=master, level=1, small_blind=25, big_blind=50, ante=0)
+    BlindStructure.objects.create(
+        tournament=master, level=2, small_blind=50, big_blind=100, ante=12
+    )
+    BlindStructure.objects.create(
+        tournament=master, level=3, small_blind=75, big_blind=150, ante=18
+    )
+    assert TournamentAdmin._auto_template_name(master) == "1-50(0)_3-150(18)"
+
+
+@pytest.mark.django_db
+def test_admin_auto_template_name_appends_hash_on_collision(pokerok):
+    """Two structures with the same first/last shape but different middle
+    must produce distinct names — second one gets a [hash] suffix."""
+    from apps.tournaments.admin import TournamentAdmin
+
+    # First structure → base name occupies that slot in the library.
+    BlindStructureTemplate.objects.create(name="1-50(0)_3-150(0)")
+
+    master = _make_tournament(pokerok, name="X")
+    BlindStructure.objects.create(tournament=master, level=1, small_blind=25, big_blind=50)
+    BlindStructure.objects.create(tournament=master, level=2, small_blind=99, big_blind=99)
+    BlindStructure.objects.create(tournament=master, level=3, small_blind=75, big_blind=150)
+    name = TournamentAdmin._auto_template_name(master)
+    assert name.startswith("1-50(0)_3-150(0) [")
+    assert name.endswith("]")
+    # 6-char hex suffix
+    assert len(name) == len("1-50(0)_3-150(0) [") + 6 + 1
+
+
+# --- module-level helpers ------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_blind_signature_sorts_by_level(pokerok):
+    from apps.tournaments.models import blind_signature
+
+    tournament = _make_tournament(pokerok)
+    BlindStructure.objects.create(
+        tournament=tournament, level=3, small_blind=75, big_blind=150, ante=18
+    )
+    BlindStructure.objects.create(
+        tournament=tournament, level=1, small_blind=25, big_blind=50, ante=0
+    )
+    BlindStructure.objects.create(
+        tournament=tournament, level=2, small_blind=50, big_blind=100, ante=12
+    )
+    sig = blind_signature(tournament.blind_levels.all())
+    assert sig == ((1, 25, 50, 0), (2, 50, 100, 12), (3, 75, 150, 18))
+
+
+def test_auto_template_name_basic_shape():
+    from apps.tournaments.models import auto_template_name
+
+    class Row:
+        def __init__(self, level, sb, bb, ante=0):
+            self.level = level
+            self.small_blind = sb
+            self.big_blind = bb
+            self.ante = ante
+
+    rows = [Row(3, 75, 150, 18), Row(1, 25, 50, 0), Row(2, 50, 100, 12)]
+    assert auto_template_name(rows) == "1-50(0)_3-150(18)"
+
+
+def test_auto_template_name_formats_with_commas():
+    from apps.tournaments.models import auto_template_name
+
+    class Row:
+        def __init__(self, level, sb, bb, ante=0):
+            self.level = level
+            self.small_blind = sb
+            self.big_blind = bb
+            self.ante = ante
+
+    rows = [Row(1, 50, 100, 0), Row(79, 150_000_000, 300_000_000, 35_000_000)]
+    assert auto_template_name(rows) == "1-100(0)_79-300,000,000(35,000,000)"
+
+
+@pytest.mark.django_db
+def test_template_id_for_signature_hits_existing():
+    from apps.tournaments.models import (
+        blind_signature,
+        template_id_for_signature,
+    )
+
+    tpl = _make_template("Probe", (1, 25, 50), (2, 50, 100, 10))
+    sig = blind_signature(tpl.levels.all())
+    assert template_id_for_signature(sig) == tpl.pk
+
+
+@pytest.mark.django_db
+def test_template_id_for_signature_returns_none_for_unknown():
+    from apps.tournaments.models import template_id_for_signature
+
+    assert template_id_for_signature(((99, 99, 99, 99),)) is None
+
+
+@pytest.mark.django_db
+def test_signature_cache_invalidated_on_template_save_and_delete():
+    """Cache must rebuild after BlindStructureTemplate writes so that
+    subsequent lookups reflect the latest state."""
+    from apps.tournaments.models import (
+        blind_signature,
+        template_id_for_signature,
+    )
+
+    tpl = _make_template("Initial", (1, 25, 50))
+    sig = blind_signature(tpl.levels.all())
+    assert template_id_for_signature(sig) == tpl.pk
+    tpl.delete()
+    assert template_id_for_signature(sig) is None
+
+
+@pytest.mark.django_db
+def test_signature_cache_invalidated_on_level_changes():
+    """Adding a level to an existing template must invalidate the cache."""
+    from apps.tournaments.models import (
+        BlindLevelTemplate,
+        blind_signature,
+        template_id_for_signature,
+    )
+
+    tpl = _make_template("Incremental", (1, 25, 50))
+    initial_sig = blind_signature(tpl.levels.all())
+    assert template_id_for_signature(initial_sig) == tpl.pk
+    BlindLevelTemplate.objects.create(template=tpl, level=2, small_blind=50, big_blind=100)
+    extended_sig = blind_signature(tpl.levels.all())
+    assert template_id_for_signature(initial_sig) is None
+    assert template_id_for_signature(extended_sig) == tpl.pk
+
+
+def _admin_with_silent_messages():
+    """TournamentAdmin instance with `message_user` stubbed out.
+
+    The admin's _save_as_template path calls message_user, which needs
+    Django messages middleware on the request. Tests don't go through
+    middleware, so we stub the method to a no-op.
+    """
+    from django.contrib.admin import AdminSite
+
+    from apps.tournaments.admin import TournamentAdmin
+
+    ta = TournamentAdmin(Tournament, AdminSite())
+    ta.message_user = lambda *a, **kw: None
+    return ta
+
+
+def _bare_request():
+    from django.test import RequestFactory
+
+    return RequestFactory().post("/admin/tournaments/tournament/add/")
+
+
+@pytest.mark.django_db
+def test_admin_save_as_template_skips_when_structure_matches_existing(pokerok):
+    """If the saved blind_levels match an existing template, the
+    save-as-template flow must NOT create a duplicate."""
+    existing = _make_template("Existing", (1, 25, 50), (2, 50, 100))
+    master = _make_tournament(pokerok, name="Dup carrier")
+    BlindStructure.objects.create(tournament=master, level=1, small_blind=25, big_blind=50)
+    BlindStructure.objects.create(tournament=master, level=2, small_blind=50, big_blind=100)
+    before = BlindStructureTemplate.objects.count()
+
+    _admin_with_silent_messages()._save_as_template(_bare_request(), master, "")
+
+    assert BlindStructureTemplate.objects.count() == before
+    assert BlindStructureTemplate.objects.filter(pk=existing.pk).exists()
+
+
+@pytest.mark.django_db
+def test_admin_save_as_template_creates_template_for_new_structure(pokerok):
+    master = _make_tournament(pokerok, name="Fresh")
+    BlindStructure.objects.create(tournament=master, level=1, small_blind=10, big_blind=20)
+    BlindStructure.objects.create(tournament=master, level=2, small_blind=20, big_blind=40)
+    before = BlindStructureTemplate.objects.count()
+
+    _admin_with_silent_messages()._save_as_template(_bare_request(), master, "")
+
+    assert BlindStructureTemplate.objects.count() == before + 1
+    assert BlindStructureTemplate.objects.filter(name="1-20(0)_2-40(0)").exists()
+
+
+@pytest.mark.django_db
+def test_admin_save_as_template_dedup_wins_over_explicit_name(pokerok):
+    """An editor-supplied name does NOT override duplicate detection —
+    the existing template is preferred regardless of the typed name."""
+    existing = _make_template("Existing", (1, 25, 50), (2, 50, 100))
+    master = _make_tournament(pokerok, name="Whatever")
+    BlindStructure.objects.create(tournament=master, level=1, small_blind=25, big_blind=50)
+    BlindStructure.objects.create(tournament=master, level=2, small_blind=50, big_blind=100)
+    before = BlindStructureTemplate.objects.count()
+
+    _admin_with_silent_messages()._save_as_template(_bare_request(), master, "Brand New Name")
+
+    assert BlindStructureTemplate.objects.count() == before
+    assert not BlindStructureTemplate.objects.filter(name="Brand New Name").exists()
+    assert BlindStructureTemplate.objects.filter(pk=existing.pk).exists()
 
 
 @pytest.mark.django_db

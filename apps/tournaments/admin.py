@@ -28,6 +28,9 @@ from .models import (
     ReEntryOption,
     Tournament,
     TournamentSeries,
+    auto_template_name,
+    blind_signature,
+    template_id_for_signature,
 )
 from .recurrence import extend_series_to_horizon, regenerate_series
 
@@ -298,40 +301,67 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
             apply_template.apply_to(instance)
 
         if form.cleaned_data.get("save_as_template"):
-            requested = (form.cleaned_data.get("save_as_template_name") or "").strip()
-            name = requested or self._auto_template_name(instance)
-            try:
-                BlindStructureTemplate.create_from_tournament(instance, name=name)
-                self.message_user(
-                    request,
-                    _("Saved blind structure as template '%(n)s'.") % {"n": name},
-                )
-            except IntegrityError:
-                self.message_user(
-                    request,
-                    _("Template name '%(n)s' already exists; not saved.") % {"n": name},
-                    level=messages.WARNING,
-                )
+            self._save_as_template(
+                request,
+                instance,
+                form.cleaned_data.get("save_as_template_name") or "",
+            )
 
         if instance.series_master_id is None:
             regenerate_series(instance)
 
+    def _save_as_template(self, request, instance, requested: str) -> None:
+        """Run the save-as-template flow: dedup first, then create.
+
+        Dedup wins over the user-typed name — an identical structure
+        never spawns a redundant template, regardless of what the
+        editor typed. Pulled out as a separate method so tests can
+        exercise the flow without monkey-patching ModelAdmin.
+        """
+        sig = blind_signature(instance.blind_levels.all())
+        existing_id = template_id_for_signature(sig)
+        if existing_id is not None:
+            existing = BlindStructureTemplate.objects.get(pk=existing_id)
+            self.message_user(
+                request,
+                _("Blind structure matches existing template '%(n)s' — no new template created.")
+                % {"n": existing.name},
+                level=messages.INFO,
+            )
+            return
+        name = requested.strip() or self._auto_template_name(instance)
+        try:
+            BlindStructureTemplate.create_from_tournament(instance, name=name)
+            self.message_user(
+                request,
+                _("Saved blind structure as template '%(n)s'.") % {"n": name},
+            )
+        except IntegrityError:
+            self.message_user(
+                request,
+                _("Template name '%(n)s' already exists; not saved.") % {"n": name},
+                level=messages.WARNING,
+            )
+
     @staticmethod
     def _auto_template_name(instance) -> str:
-        """Return a unique template name based on the tournament's name.
+        """Content-based name from the tournament's blind_levels.
 
-        Used when the editor leaves "New template name" blank. Mirrors
-        the naming used by the data migration so the library stays
-        coherent regardless of how rows enter it.
+        Returns '<first_level>-<first_bb>(<first_ante>)_<last_level>-<last_bb>(<last_ante>)'
+        e.g. '1-100(12)_5-1,600(150)'. If the shape collides with an
+        existing template's name (same edges, different middle), a 6-char
+        hash suffix `[abcdef]` is appended to disambiguate.
         """
-        base = (f"Like {instance.name}")[:120]
-        name = base
-        n = 2
-        while BlindStructureTemplate.objects.filter(name=name).exists():
-            suffix = f" ({n})"
-            name = (base[: 120 - len(suffix)]) + suffix
-            n += 1
-        return name
+        import hashlib
+
+        rows = list(instance.blind_levels.all())
+        if not rows:
+            return f"Like {instance.name}"[:120]
+        base = auto_template_name(rows)
+        if not BlindStructureTemplate.objects.filter(name=base).exists():
+            return base[:120]
+        digest = hashlib.sha256(repr(blind_signature(rows)).encode()).hexdigest()[:6]
+        return f"{base} [{digest}]"[:120]
 
     # --- "Save and add same" ---------------------------------------------
 

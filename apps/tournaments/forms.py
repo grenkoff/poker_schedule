@@ -364,7 +364,11 @@ class TournamentAdminForm(forms.ModelForm):
         label=_("New template name"),
         max_length=120,
         required=False,
-        help_text=_("Leave blank to auto-name it after this tournament."),
+        help_text=_(
+            "Leave blank to auto-name from the structure's shape "
+            "(e.g. '1-100(12)_5-1,600(150)'). If an identical structure "
+            "already exists no new template is created."
+        ),
     )
 
     class Media:
