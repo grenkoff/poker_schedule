@@ -238,13 +238,16 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     def get_queryset(self, request):
         self._extend_recurring_series()
         qs = super().get_queryset(request)
-        # Hide expired children but keep series masters visible regardless
-        # of their original starting_time — otherwise child rows show a
-        # broken `series_master` link (master sits in DB but `get_object`
-        # uses this same queryset and returns 404).
+        # Hide expired tournaments, but keep RECURRING SERIES MASTERS
+        # visible regardless of their original starting_time. Otherwise
+        # child rows show a broken `series_master` link — the master
+        # still sits in DB but `get_object` uses this same queryset and
+        # returns 404. One-off tournaments past their late-reg window
+        # stay filtered out.
         from django.db.models import Q
         return qs.filter(
-            Q(series_master__isnull=True) | Q(late_reg_at__gte=timezone.now())
+            Q(periodicity__interval_seconds__gt=0, series_master__isnull=True)
+            | Q(late_reg_at__gte=timezone.now())
         )
 
     def _extend_recurring_series(self) -> None:
