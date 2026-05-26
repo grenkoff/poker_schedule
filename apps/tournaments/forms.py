@@ -359,15 +359,10 @@ class TournamentAdminForm(forms.ModelForm):
     save_as_template = forms.BooleanField(
         label=_("Save current blind structure as a new template"),
         required=False,
-    )
-    save_as_template_name = forms.CharField(
-        label=_("New template name"),
-        max_length=120,
-        required=False,
         help_text=_(
-            "Leave blank to auto-name from the structure's shape "
-            "(e.g. '1-100(12)_5-1,600(150)'). If an identical structure "
-            "already exists no new template is created."
+            "The template is auto-named from the structure's shape "
+            "(e.g. '1-100(12)_5-1,600(150) [a1b2c3]'). If an identical "
+            "structure already exists no new template is created."
         ),
     )
 
@@ -563,16 +558,6 @@ class TournamentAdminForm(forms.ModelForm):
                     _("Starting time falls on a weekday that isn't selected."),
                 )
 
-        # When `save_as_template` is checked, validate the supplied name
-        # only if non-empty; the admin's `_auto_template_name` will fill
-        # in a default otherwise.
-        if cleaned.get("save_as_template"):
-            name = (cleaned.get("save_as_template_name") or "").strip()
-            if name and BlindStructureTemplate.objects.filter(name=name).exists():
-                self.add_error(
-                    "save_as_template_name",
-                    _("A template with that name already exists."),
-                )
         return cleaned
 
     def save(self, commit=True):

@@ -80,7 +80,10 @@ class BlindStructureTemplateAdmin(StaffAdminMixin, admin.ModelAdmin):
     list_display = ("name", "level_count", "created_at")
     search_fields = ("name",)
     ordering = ("name",)
-    fields = ("name",)
+    # `name` is auto-derived from levels in save_related; no other model
+    # field belongs on the form, so exclude it explicitly. `fields = ()`
+    # would be falsy and silently fall back to "all model fields".
+    exclude = ("name",)
     inlines = (BlindLevelTemplateInline,)
 
     class Media:
@@ -98,6 +101,42 @@ class BlindStructureTemplateAdmin(StaffAdminMixin, admin.ModelAdmin):
     @admin.display(description=_("levels"))
     def level_count(self, obj) -> int:
         return obj.levels.count()
+
+    def save_model(self, request, obj, form, change):
+        # `name` is unique + non-null. We auto-derive it from the levels
+        # in save_related (which runs after the inline is persisted), so
+        # we need a temporary unique value here just to satisfy the DB
+        # on the initial insert. save_related rewrites it immediately.
+        if not obj.name:
+            import uuid
+
+            obj.name = f"new-{uuid.uuid4().hex[:8]}"
+        super().save_model(request, obj, form, change)
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        instance = form.instance
+        rows = list(instance.levels.all())
+        if not rows:
+            return
+        canonical = auto_template_name(rows)
+        if instance.name == canonical:
+            return
+        # Another template might already own this canonical name (it
+        # would be a content-equivalent duplicate). Fall through to the
+        # unique-constraint error — the editor can resolve manually.
+        try:
+            instance.name = canonical
+            instance.save(update_fields=["name", "updated_at"])
+        except IntegrityError:
+            self.message_user(
+                request,
+                _(
+                    "An identical blind structure already exists. "
+                    "Delete this duplicate and use the existing template instead."
+                ),
+                level=messages.WARNING,
+            )
 
 
 @admin.register(Tournament)
@@ -184,7 +223,6 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
                 "fields": (
                     "apply_template",
                     "save_as_template",
-                    "save_as_template_name",
                 ),
                 "description": _(
                     "Optionally load an existing template into the BLIND LEVELS "
@@ -301,22 +339,17 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
             apply_template.apply_to(instance)
 
         if form.cleaned_data.get("save_as_template"):
-            self._save_as_template(
-                request,
-                instance,
-                form.cleaned_data.get("save_as_template_name") or "",
-            )
+            self._save_as_template(request, instance)
 
         if instance.series_master_id is None:
             regenerate_series(instance)
 
-    def _save_as_template(self, request, instance, requested: str) -> None:
+    def _save_as_template(self, request, instance) -> None:
         """Run the save-as-template flow: dedup first, then create.
 
-        Dedup wins over the user-typed name — an identical structure
-        never spawns a redundant template, regardless of what the
-        editor typed. Pulled out as a separate method so tests can
-        exercise the flow without monkey-patching ModelAdmin.
+        The template name is always auto-derived from the structure
+        — the editor has no say. If an identical structure already
+        exists no redundant template is created.
         """
         sig = blind_signature(instance.blind_levels.all())
         existing_id = template_id_for_signature(sig)
@@ -329,7 +362,7 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
                 level=messages.INFO,
             )
             return
-        name = requested.strip() or self._auto_template_name(instance)
+        name = self._auto_template_name(instance)
         try:
             BlindStructureTemplate.create_from_tournament(instance, name=name)
             self.message_user(

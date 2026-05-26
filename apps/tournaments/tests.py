@@ -1063,29 +1063,12 @@ def _admin_post_payload(pokerok, **overrides) -> dict:
 
 
 @pytest.mark.django_db
-def test_admin_form_save_as_template_validation_rejects_collision(pokerok):
+def test_admin_form_save_as_template_is_valid_with_checkbox_only(pokerok):
+    """The form no longer carries a user-typed template name — checking
+    the box is sufficient; the name is auto-derived on save."""
     from apps.tournaments.forms import TournamentAdminForm
 
-    BlindStructureTemplate.objects.create(name="Z")
-    data = _admin_post_payload(
-        pokerok,
-        save_as_template="on",
-        save_as_template_name="Z",
-    )
-    form = TournamentAdminForm(data=data)
-    assert not form.is_valid()
-    assert "save_as_template_name" in form.errors
-
-
-@pytest.mark.django_db
-def test_admin_form_save_as_template_allows_blank_name(pokerok):
-    from apps.tournaments.forms import TournamentAdminForm
-
-    data = _admin_post_payload(
-        pokerok,
-        save_as_template="on",
-        save_as_template_name="",
-    )
+    data = _admin_post_payload(pokerok, save_as_template="on")
     form = TournamentAdminForm(data=data)
     assert form.is_valid(), form.errors
 
@@ -1319,7 +1302,7 @@ def test_admin_save_as_template_skips_when_structure_matches_existing(pokerok):
     BlindStructure.objects.create(tournament=master, level=2, small_blind=50, big_blind=100)
     before = BlindStructureTemplate.objects.count()
 
-    _admin_with_silent_messages()._save_as_template(_bare_request(), master, "")
+    _admin_with_silent_messages()._save_as_template(_bare_request(), master)
 
     assert BlindStructureTemplate.objects.count() == before
     assert BlindStructureTemplate.objects.filter(pk=existing.pk).exists()
@@ -1332,29 +1315,12 @@ def test_admin_save_as_template_creates_template_for_new_structure(pokerok):
     BlindStructure.objects.create(tournament=master, level=2, small_blind=20, big_blind=40)
     before = BlindStructureTemplate.objects.count()
 
-    _admin_with_silent_messages()._save_as_template(_bare_request(), master, "")
+    _admin_with_silent_messages()._save_as_template(_bare_request(), master)
 
     assert BlindStructureTemplate.objects.count() == before + 1
     new = BlindStructureTemplate.objects.latest("created_at")
     assert new.name.startswith("1-20(0)_2-40(0) [")
     assert new.name.endswith("]")
-
-
-@pytest.mark.django_db
-def test_admin_save_as_template_dedup_wins_over_explicit_name(pokerok):
-    """An editor-supplied name does NOT override duplicate detection —
-    the existing template is preferred regardless of the typed name."""
-    existing = _make_template("Existing", (1, 25, 50), (2, 50, 100))
-    master = _make_tournament(pokerok, name="Whatever")
-    BlindStructure.objects.create(tournament=master, level=1, small_blind=25, big_blind=50)
-    BlindStructure.objects.create(tournament=master, level=2, small_blind=50, big_blind=100)
-    before = BlindStructureTemplate.objects.count()
-
-    _admin_with_silent_messages()._save_as_template(_bare_request(), master, "Brand New Name")
-
-    assert BlindStructureTemplate.objects.count() == before
-    assert not BlindStructureTemplate.objects.filter(name="Brand New Name").exists()
-    assert BlindStructureTemplate.objects.filter(pk=existing.pk).exists()
 
 
 @pytest.mark.django_db
