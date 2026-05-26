@@ -1,9 +1,25 @@
-/* Hide Django's default per-row "original" label in the blind-level
- * inlines (BlindStructure on Tournament, BlindLevelTemplate on
- * BlindStructureTemplate). The model `__str__` (e.g. "L1: 50/100")
- * duplicates information that's already in the row's input cells, so
- * showing it just clutters the form. */
-#blind_levels-group td.original p,
-#levels-group td.original p {
+/* Tighten the blind-level inlines (BlindStructure on Tournament and
+ * BlindLevelTemplate on BlindStructureTemplate).
+ *
+ * 1. Hide the per-row "original" cell entirely. Django uses it to show
+ *    the model's `__str__` (e.g. "L1: 50/100"), which just duplicates
+ *    the input cells. Hidden form inputs inside this <td> stay in the
+ *    DOM and still submit normally — `display: none` only hides the
+ *    cell visually.
+ * 2. Shrink the vertical padding on the remaining cells so the row
+ *    height matches the input height instead of leaving a tall blank
+ *    band where the label used to live. */
+#blind_levels-group td.original,
+#blind_levels-group th.original,
+#levels-group td.original,
+#levels-group th.original {
     display: none;
+}
+
+#blind_levels-group .tabular td,
+#blind_levels-group .tabular th,
+#levels-group .tabular td,
+#levels-group .tabular th {
+    padding-top: 4px;
+    padding-bottom: 4px;
 }
