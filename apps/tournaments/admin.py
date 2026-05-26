@@ -347,21 +347,15 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     def _auto_template_name(instance) -> str:
         """Content-based name from the tournament's blind_levels.
 
-        Returns '<first_level>-<first_bb>(<first_ante>)_<last_level>-<last_bb>(<last_ante>)'
-        e.g. '1-100(12)_5-1,600(150)'. If the shape collides with an
-        existing template's name (same edges, different middle), a 6-char
-        hash suffix `[abcdef]` is appended to disambiguate.
+        Returns e.g. '1-100(12)_5-1,600(150) [a1b2c3]'. The hash slice
+        is always present; equal signatures produce equal names, which
+        the dedup path in `_save_as_template` will collapse before any
+        new template is created.
         """
-        import hashlib
-
         rows = list(instance.blind_levels.all())
         if not rows:
             return f"Like {instance.name}"[:120]
-        base = auto_template_name(rows)
-        if not BlindStructureTemplate.objects.filter(name=base).exists():
-            return base[:120]
-        digest = hashlib.sha256(repr(blind_signature(rows)).encode()).hexdigest()[:6]
-        return f"{base} [{digest}]"[:120]
+        return auto_template_name(rows)[:120]
 
     # --- "Save and add same" ---------------------------------------------
 

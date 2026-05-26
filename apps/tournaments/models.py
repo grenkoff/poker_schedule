@@ -443,19 +443,26 @@ def blind_signature(rows) -> tuple:
 
 
 def auto_template_name(rows) -> str:
-    """Content-based name like '1-100(12)_5-1,600(150)'.
+    """Content-based name like '1-100(12)_5-1,600(150) [a1b2c3]'.
 
-    Encodes the first and last level's index, big blind and ante. Two
-    different structures can collide on this shape (same edges, different
-    middle); callers append a hash suffix to disambiguate when that
-    happens.
+    The leading content portion encodes first/last level's index, big
+    blind and ante; the trailing `[hash6]` is a 6-char hex slice of
+    SHA-256(signature). Always present so two structures with the same
+    shape but different middle are visually distinct, and equal
+    signatures always produce equal names (which the dedup path uses
+    to collapse redundant templates).
     """
+    import hashlib
+
     s = sorted(rows, key=lambda r: r.level)
     first, last = s[0], s[-1]
-    return (
+    base = (
         f"{first.level}-{first.big_blind:,}({first.ante:,})"
         f"_{last.level}-{last.big_blind:,}({last.ante:,})"
     )
+    sig = blind_signature(s)
+    digest = hashlib.sha256(repr(sig).encode()).hexdigest()[:6]
+    return f"{base} [{digest}]"
 
 
 # In-process cache: signature tuple -> BlindStructureTemplate.pk. None

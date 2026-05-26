@@ -1121,8 +1121,9 @@ def test_admin_auto_template_name_falls_back_for_empty_blind_levels(pokerok):
 
 
 @pytest.mark.django_db
-def test_admin_auto_template_name_returns_content_shape(pokerok):
-    """When blind_levels exist, the auto-name encodes first/last level."""
+def test_admin_auto_template_name_returns_content_shape_with_hash(pokerok):
+    """When blind_levels exist, the auto-name encodes first/last level
+    AND always carries a [hash] suffix."""
     from apps.tournaments.admin import TournamentAdmin
 
     master = _make_tournament(pokerok, name="Whatever")
@@ -1133,27 +1134,38 @@ def test_admin_auto_template_name_returns_content_shape(pokerok):
     BlindStructure.objects.create(
         tournament=master, level=3, small_blind=75, big_blind=150, ante=18
     )
-    assert TournamentAdmin._auto_template_name(master) == "1-50(0)_3-150(18)"
+    name = TournamentAdmin._auto_template_name(master)
+    assert name.startswith("1-50(0)_3-150(18) [")
+    assert name.endswith("]")
+    assert len(name) == len("1-50(0)_3-150(18) [") + 6 + 1
 
 
 @pytest.mark.django_db
-def test_admin_auto_template_name_appends_hash_on_collision(pokerok):
-    """Two structures with the same first/last shape but different middle
-    must produce distinct names — second one gets a [hash] suffix."""
+def test_admin_auto_template_name_distinct_for_different_middle(pokerok):
+    """Two structures with matching edges but different middle rows
+    produce different names because the hash slice differs."""
     from apps.tournaments.admin import TournamentAdmin
 
-    # First structure → base name occupies that slot in the library.
-    BlindStructureTemplate.objects.create(name="1-50(0)_3-150(0)")
+    a = _make_tournament(pokerok, name="A")
+    BlindStructure.objects.create(tournament=a, level=1, small_blind=25, big_blind=50)
+    BlindStructure.objects.create(tournament=a, level=2, small_blind=40, big_blind=80)
+    BlindStructure.objects.create(tournament=a, level=3, small_blind=75, big_blind=150)
 
-    master = _make_tournament(pokerok, name="X")
-    BlindStructure.objects.create(tournament=master, level=1, small_blind=25, big_blind=50)
-    BlindStructure.objects.create(tournament=master, level=2, small_blind=99, big_blind=99)
-    BlindStructure.objects.create(tournament=master, level=3, small_blind=75, big_blind=150)
-    name = TournamentAdmin._auto_template_name(master)
-    assert name.startswith("1-50(0)_3-150(0) [")
-    assert name.endswith("]")
-    # 6-char hex suffix
-    assert len(name) == len("1-50(0)_3-150(0) [") + 6 + 1
+    b = _make_tournament(
+        pokerok,
+        name="B",
+        starting_time=a.starting_time + timedelta(hours=1),
+        late_reg_at=a.late_reg_at + timedelta(hours=1),
+    )
+    BlindStructure.objects.create(tournament=b, level=1, small_blind=25, big_blind=50)
+    BlindStructure.objects.create(tournament=b, level=2, small_blind=99, big_blind=99)
+    BlindStructure.objects.create(tournament=b, level=3, small_blind=75, big_blind=150)
+
+    name_a = TournamentAdmin._auto_template_name(a)
+    name_b = TournamentAdmin._auto_template_name(b)
+    assert name_a != name_b
+    assert name_a.startswith("1-50(0)_3-150(0) [")
+    assert name_b.startswith("1-50(0)_3-150(0) [")
 
 
 # --- module-level helpers ------------------------------------------------
@@ -1177,32 +1189,49 @@ def test_blind_signature_sorts_by_level(pokerok):
     assert sig == ((1, 25, 50, 0), (2, 50, 100, 12), (3, 75, 150, 18))
 
 
+class _RowStub:
+    def __init__(self, level, sb, bb, ante=0):
+        self.level = level
+        self.small_blind = sb
+        self.big_blind = bb
+        self.ante = ante
+
+
 def test_auto_template_name_basic_shape():
     from apps.tournaments.models import auto_template_name
 
-    class Row:
-        def __init__(self, level, sb, bb, ante=0):
-            self.level = level
-            self.small_blind = sb
-            self.big_blind = bb
-            self.ante = ante
-
-    rows = [Row(3, 75, 150, 18), Row(1, 25, 50, 0), Row(2, 50, 100, 12)]
-    assert auto_template_name(rows) == "1-50(0)_3-150(18)"
+    rows = [_RowStub(3, 75, 150, 18), _RowStub(1, 25, 50, 0), _RowStub(2, 50, 100, 12)]
+    name = auto_template_name(rows)
+    assert name.startswith("1-50(0)_3-150(18) [")
+    assert name.endswith("]")
+    assert len(name) == len("1-50(0)_3-150(18) [") + 6 + 1
 
 
 def test_auto_template_name_formats_with_commas():
     from apps.tournaments.models import auto_template_name
 
-    class Row:
-        def __init__(self, level, sb, bb, ante=0):
-            self.level = level
-            self.small_blind = sb
-            self.big_blind = bb
-            self.ante = ante
+    rows = [_RowStub(1, 50, 100, 0), _RowStub(79, 150_000_000, 300_000_000, 35_000_000)]
+    name = auto_template_name(rows)
+    assert name.startswith("1-100(0)_79-300,000,000(35,000,000) [")
+    assert name.endswith("]")
 
-    rows = [Row(1, 50, 100, 0), Row(79, 150_000_000, 300_000_000, 35_000_000)]
-    assert auto_template_name(rows) == "1-100(0)_79-300,000,000(35,000,000)"
+
+def test_auto_template_name_same_signature_yields_same_name():
+    """Equal signatures must produce equal hashes (and thus equal names);
+    this is the property the dedup migration relies on."""
+    from apps.tournaments.models import auto_template_name
+
+    rows_a = [_RowStub(1, 25, 50, 0), _RowStub(2, 50, 100, 12)]
+    rows_b = [_RowStub(2, 50, 100, 12), _RowStub(1, 25, 50, 0)]  # different input order
+    assert auto_template_name(rows_a) == auto_template_name(rows_b)
+
+
+def test_auto_template_name_different_middle_changes_hash():
+    from apps.tournaments.models import auto_template_name
+
+    rows_a = [_RowStub(1, 25, 50, 0), _RowStub(2, 40, 80), _RowStub(3, 75, 150, 0)]
+    rows_b = [_RowStub(1, 25, 50, 0), _RowStub(2, 99, 99), _RowStub(3, 75, 150, 0)]
+    assert auto_template_name(rows_a) != auto_template_name(rows_b)
 
 
 @pytest.mark.django_db
@@ -1306,7 +1335,9 @@ def test_admin_save_as_template_creates_template_for_new_structure(pokerok):
     _admin_with_silent_messages()._save_as_template(_bare_request(), master, "")
 
     assert BlindStructureTemplate.objects.count() == before + 1
-    assert BlindStructureTemplate.objects.filter(name="1-20(0)_2-40(0)").exists()
+    new = BlindStructureTemplate.objects.latest("created_at")
+    assert new.name.startswith("1-20(0)_2-40(0) [")
+    assert new.name.endswith("]")
 
 
 @pytest.mark.django_db
