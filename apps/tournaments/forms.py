@@ -158,7 +158,11 @@ class BlindStructureTemplateWidget(forms.Select):
     def _levels(self) -> dict[int, list[list[int]]]:
         if self._levels_map is None:
             rows = BlindLevelTemplate.objects.order_by("template_id", "level").values_list(
-                "template_id", "level", "small_blind", "big_blind", "ante",
+                "template_id",
+                "level",
+                "small_blind",
+                "big_blind",
+                "ante",
             )
             by_tpl: dict[int, list[list[int]]] = {}
             for tpl_id, level, sb, bb, ante in rows:
@@ -360,9 +364,7 @@ class TournamentAdminForm(forms.ModelForm):
         label=_("New template name"),
         max_length=120,
         required=False,
-        help_text=_(
-            "Leave blank to auto-name it after this tournament."
-        ),
+        help_text=_("Leave blank to auto-name it after this tournament."),
     )
 
     class Media:

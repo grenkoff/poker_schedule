@@ -940,9 +940,11 @@ def test_template_apply_to_copies_rows_into_tournament(pokerok):
     tournament = _make_tournament(pokerok)
     template = _make_template("Std", (1, 25, 50), (2, 50, 100), (3, 75, 150, 25))
     template.apply_to(tournament)
-    rows = list(tournament.blind_levels.order_by("level").values_list(
-        "level", "small_blind", "big_blind", "ante"
-    ))
+    rows = list(
+        tournament.blind_levels.order_by("level").values_list(
+            "level", "small_blind", "big_blind", "ante"
+        )
+    )
     assert rows == [(1, 25, 50, 0), (2, 50, 100, 0), (3, 75, 150, 25)]
 
 
@@ -965,13 +967,17 @@ def test_template_apply_to_idempotent(pokerok):
     tournament = _make_tournament(pokerok)
     template = _make_template("Std", (1, 25, 50), (2, 50, 100))
     template.apply_to(tournament)
-    first = list(tournament.blind_levels.order_by("level").values_list(
-        "level", "small_blind", "big_blind", "ante"
-    ))
+    first = list(
+        tournament.blind_levels.order_by("level").values_list(
+            "level", "small_blind", "big_blind", "ante"
+        )
+    )
     template.apply_to(tournament)
-    second = list(tournament.blind_levels.order_by("level").values_list(
-        "level", "small_blind", "big_blind", "ante"
-    ))
+    second = list(
+        tournament.blind_levels.order_by("level").values_list(
+            "level", "small_blind", "big_blind", "ante"
+        )
+    )
     assert first == second
     assert len(second) == 2
 
@@ -980,11 +986,13 @@ def test_template_apply_to_idempotent(pokerok):
 def test_template_create_from_tournament_snapshots_rows(pokerok):
     tournament = _make_tournament(pokerok)
     BlindStructure.objects.create(tournament=tournament, level=1, small_blind=10, big_blind=20)
-    BlindStructure.objects.create(tournament=tournament, level=2, small_blind=20, big_blind=40, ante=5)
+    BlindStructure.objects.create(
+        tournament=tournament, level=2, small_blind=20, big_blind=40, ante=5
+    )
     template = BlindStructureTemplate.create_from_tournament(tournament, name="From T")
-    rows = list(template.levels.order_by("level").values_list(
-        "level", "small_blind", "big_blind", "ante"
-    ))
+    rows = list(
+        template.levels.order_by("level").values_list("level", "small_blind", "big_blind", "ante")
+    )
     assert rows == [(1, 10, 20, 0), (2, 20, 40, 5)]
 
 
@@ -1004,13 +1012,11 @@ def test_template_edits_do_not_affect_previously_applied_tournament(pokerok):
     template.apply_to(tournament)
     # Mutate the template after applying.
     template.levels.all().delete()
-    BlindLevelTemplate.objects.create(
-        template=template, level=1, small_blind=999, big_blind=9999
-    )
+    BlindLevelTemplate.objects.create(template=template, level=1, small_blind=999, big_blind=9999)
     tournament.refresh_from_db()
-    rows = list(tournament.blind_levels.order_by("level").values_list(
-        "level", "small_blind", "big_blind"
-    ))
+    rows = list(
+        tournament.blind_levels.order_by("level").values_list("level", "small_blind", "big_blind")
+    )
     assert rows == [(1, 25, 50), (2, 50, 100)]
 
 
@@ -1100,9 +1106,7 @@ def test_recurring_children_inherit_template_when_applied_before_regenerate(poke
     children = Tournament.objects.filter(series_master=master)
     assert children.exists()
     for child in children:
-        rows = list(
-            child.blind_levels.order_by("level").values_list("level", "big_blind")
-        )
+        rows = list(child.blind_levels.order_by("level").values_list("level", "big_blind"))
         assert rows == [(1, 50), (2, 100), (3, 150)]
 
 
@@ -1142,25 +1146,26 @@ def test_extract_blind_templates_migration_runs_against_seeded_data(pokerok):
     "Like <tournament>" scheme."""
     import importlib
 
-    mig = importlib.import_module(
-        "apps.tournaments.migrations.0026_extract_blind_templates"
-    )
+    mig = importlib.import_module("apps.tournaments.migrations.0026_extract_blind_templates")
 
     # Three masters: A and B share a signature; C has its own; D has no
     # blind_levels at all and must be skipped.
     a = _make_tournament(pokerok, name="ShapeAlpha")
     b = _make_tournament(
-        pokerok, name="ShapeBeta",
+        pokerok,
+        name="ShapeBeta",
         starting_time=a.starting_time + timedelta(hours=1),
         late_reg_at=a.late_reg_at + timedelta(hours=1),
     )
     c = _make_tournament(
-        pokerok, name="ShapeGamma",
+        pokerok,
+        name="ShapeGamma",
         starting_time=a.starting_time + timedelta(hours=2),
         late_reg_at=a.late_reg_at + timedelta(hours=2),
     )
     _ = _make_tournament(  # no blind_levels - should be skipped
-        pokerok, name="ShapeDelta",
+        pokerok,
+        name="ShapeDelta",
         starting_time=a.starting_time + timedelta(hours=3),
         late_reg_at=a.late_reg_at + timedelta(hours=3),
     )

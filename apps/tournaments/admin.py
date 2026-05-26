@@ -245,6 +245,7 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         # returns 404. One-off tournaments past their late-reg window
         # stay filtered out.
         from django.db.models import Q
+
         return qs.filter(
             Q(periodicity__interval_seconds__gt=0, series_master__isnull=True)
             | Q(late_reg_at__gte=timezone.now())
@@ -308,8 +309,7 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
             except IntegrityError:
                 self.message_user(
                     request,
-                    _("Template name '%(n)s' already exists; not saved.")
-                    % {"n": name},
+                    _("Template name '%(n)s' already exists; not saved.") % {"n": name},
                     level=messages.WARNING,
                 )
 
