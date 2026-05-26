@@ -24,18 +24,18 @@
     padding-bottom: 4px;
 }
 
-/* Django renders the "remove this new row" X (`<a class="inline-deletelink">`)
- * with `position: absolute`. Combined with our tightened row padding the
- * link ends up anchored below the cell rather than vertically centered
- * with the DELETE checkboxes of saved rows. Pull it back into flow and
- * center it so the column stays visually consistent across saved vs.
- * just-added rows. */
+/* Django styles the "remove this new row" X (`<a class="inline-deletelink">`)
+ * with `float: right`. Combined with our tightened row padding the
+ * 16x16 link overflows the bottom of its (short) cell, landing below
+ * the DELETE checkboxes of saved rows. Drop the float and center the
+ * link inside `td.delete` so the column reads consistently across
+ * saved vs. just-added rows. */
 #blind_levels-group .tabular .inline-deletelink,
 #levels-group .tabular .inline-deletelink {
-    position: static;
-    margin: 0;
+    float: none;
     display: inline-block;
     vertical-align: middle;
+    margin: 0;
 }
 
 #blind_levels-group .tabular td.delete,
