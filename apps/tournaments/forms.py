@@ -356,16 +356,6 @@ class TournamentAdminForm(forms.ModelForm):
             "edits to this tournament."
         ),
     )
-    save_as_template = forms.BooleanField(
-        label=_("Save current blind structure as a new template"),
-        required=False,
-    )
-    save_as_template_name = forms.CharField(
-        label=_("New template name"),
-        max_length=120,
-        required=False,
-        help_text=_("Leave blank to auto-name it after this tournament."),
-    )
 
     class Media:
         js = (
@@ -461,6 +451,19 @@ class TournamentAdminForm(forms.ModelForm):
                         val = getattr(self.instance, fname, None)
                         if val and djtz.is_aware(val):
                             self.initial[fname] = val.astimezone(tz).replace(tzinfo=None)
+
+            # Preselect the existing template that matches this
+            # tournament's blind structure so the editor sees the name
+            # of the template they're effectively using. The save_related
+            # path skips a re-apply when the signature is already
+            # equal, so a no-op edit doesn't churn the inline rows.
+            from .models import blind_signature, template_id_for_signature
+
+            sig = blind_signature(self.instance.blind_levels.all())
+            if sig:
+                matched = template_id_for_signature(sig)
+                if matched is not None:
+                    self.fields["apply_template"].initial = matched
 
         # Late-reg fields are conditionally required: the checkbox state
         # decides. On a bound submission with the checkbox unchecked, the
@@ -559,16 +562,6 @@ class TournamentAdminForm(forms.ModelForm):
                     _("Starting time falls on a weekday that isn't selected."),
                 )
 
-        # When `save_as_template` is checked, validate the supplied name
-        # only if non-empty; the admin's `_auto_template_name` will fill
-        # in a default otherwise.
-        if cleaned.get("save_as_template"):
-            name = (cleaned.get("save_as_template_name") or "").strip()
-            if name and BlindStructureTemplate.objects.filter(name=name).exists():
-                self.add_error(
-                    "save_as_template_name",
-                    _("A template with that name already exists."),
-                )
         return cleaned
 
     def save(self, commit=True):

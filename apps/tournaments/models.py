@@ -424,3 +424,84 @@ class BlindLevelTemplate(models.Model):
 
     def __str__(self) -> str:
         return f"L{self.level}: {self.small_blind}/{self.big_blind}"
+
+
+# --- BlindStructureTemplate helpers + signature cache --------------------
+
+
+def blind_signature(rows) -> tuple:
+    """Canonical signature of a blind structure for equality matching.
+
+    `rows` is any iterable of objects with `.level`, `.small_blind`,
+    `.big_blind`, `.ante` — works for both BlindStructure and
+    BlindLevelTemplate rows. Two structures with the same per-level
+    values produce the same tuple regardless of input ordering.
+    """
+    return tuple(
+        (r.level, r.small_blind, r.big_blind, r.ante) for r in sorted(rows, key=lambda r: r.level)
+    )
+
+
+def auto_template_name(rows) -> str:
+    """Content-based name like '1-100(12)_5-1,600(150) [a1b2c3]'.
+
+    The leading content portion encodes first/last level's index, big
+    blind and ante; the trailing `[hash6]` is a 6-char hex slice of
+    SHA-256(signature). Always present so two structures with the same
+    shape but different middle are visually distinct, and equal
+    signatures always produce equal names (which the dedup path uses
+    to collapse redundant templates).
+    """
+    import hashlib
+
+    s = sorted(rows, key=lambda r: r.level)
+    first, last = s[0], s[-1]
+    base = (
+        f"{first.level}-{first.big_blind:,}({first.ante:,})"
+        f"_{last.level}-{last.big_blind:,}({last.ante:,})"
+    )
+    sig = blind_signature(s)
+    digest = hashlib.sha256(repr(sig).encode()).hexdigest()[:6]
+    return f"{base} [{digest}]"
+
+
+# In-process cache: signature tuple -> BlindStructureTemplate.pk. None
+# means "not loaded yet"; reset to None by post_save / post_delete
+# signals below so the next read rebuilds from DB.
+_signature_cache: dict[tuple, int] | None = None
+
+
+def _load_signature_cache() -> dict[tuple, int]:
+    global _signature_cache
+    by_tpl: dict[int, list[tuple[int, int, int, int]]] = {}
+    rows = BlindLevelTemplate.objects.order_by("template_id", "level").values_list(
+        "template_id",
+        "level",
+        "small_blind",
+        "big_blind",
+        "ante",
+    )
+    for tpl_id, level, sb, bb, ante in rows:
+        by_tpl.setdefault(tpl_id, []).append((level, sb, bb, ante))
+    _signature_cache = {tuple(items): tpl_id for tpl_id, items in by_tpl.items()}
+    return _signature_cache
+
+
+def template_id_for_signature(sig: tuple) -> int | None:
+    """Return PK of an existing template with this exact signature, or None."""
+    cache = _signature_cache if _signature_cache is not None else _load_signature_cache()
+    return cache.get(sig)
+
+
+def _invalidate_signature_cache(**_):
+    global _signature_cache
+    _signature_cache = None
+
+
+# Wire the invalidation. Using string `sender=` avoids the circular
+# import that would happen if we passed the class objects before this
+# module finishes loading.
+models.signals.post_save.connect(_invalidate_signature_cache, sender=BlindStructureTemplate)
+models.signals.post_delete.connect(_invalidate_signature_cache, sender=BlindStructureTemplate)
+models.signals.post_save.connect(_invalidate_signature_cache, sender=BlindLevelTemplate)
+models.signals.post_delete.connect(_invalidate_signature_cache, sender=BlindLevelTemplate)

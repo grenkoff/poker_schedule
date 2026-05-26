@@ -28,6 +28,9 @@ from .models import (
     ReEntryOption,
     Tournament,
     TournamentSeries,
+    auto_template_name,
+    blind_signature,
+    template_id_for_signature,
 )
 from .recurrence import extend_series_to_horizon, regenerate_series
 
@@ -77,7 +80,10 @@ class BlindStructureTemplateAdmin(StaffAdminMixin, admin.ModelAdmin):
     list_display = ("name", "level_count", "created_at")
     search_fields = ("name",)
     ordering = ("name",)
-    fields = ("name",)
+    # `name` is auto-derived from levels in save_related; no other model
+    # field belongs on the form, so exclude it explicitly. `fields = ()`
+    # would be falsy and silently fall back to "all model fields".
+    exclude = ("name",)
     inlines = (BlindLevelTemplateInline,)
 
     class Media:
@@ -95,6 +101,42 @@ class BlindStructureTemplateAdmin(StaffAdminMixin, admin.ModelAdmin):
     @admin.display(description=_("levels"))
     def level_count(self, obj) -> int:
         return obj.levels.count()
+
+    def save_model(self, request, obj, form, change):
+        # `name` is unique + non-null. We auto-derive it from the levels
+        # in save_related (which runs after the inline is persisted), so
+        # we need a temporary unique value here just to satisfy the DB
+        # on the initial insert. save_related rewrites it immediately.
+        if not obj.name:
+            import uuid
+
+            obj.name = f"new-{uuid.uuid4().hex[:8]}"
+        super().save_model(request, obj, form, change)
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        instance = form.instance
+        rows = list(instance.levels.all())
+        if not rows:
+            return
+        canonical = auto_template_name(rows)
+        if instance.name == canonical:
+            return
+        # Another template might already own this canonical name (it
+        # would be a content-equivalent duplicate). Fall through to the
+        # unique-constraint error — the editor can resolve manually.
+        try:
+            instance.name = canonical
+            instance.save(update_fields=["name", "updated_at"])
+        except IntegrityError:
+            self.message_user(
+                request,
+                _(
+                    "An identical blind structure already exists. "
+                    "Delete this duplicate and use the existing template instead."
+                ),
+                level=messages.WARNING,
+            )
 
 
 @admin.register(Tournament)
@@ -178,14 +220,11 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         (
             _("Blind structure template"),
             {
-                "fields": (
-                    "apply_template",
-                    "save_as_template",
-                    "save_as_template_name",
-                ),
+                "fields": ("apply_template",),
                 "description": _(
                     "Optionally load an existing template into the BLIND LEVELS "
-                    "table below, or save the entered rows as a new template."
+                    "table below. Any new structure not already in the library "
+                    "is saved as a new template automatically on save."
                 ),
             },
         ),
@@ -295,43 +334,67 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         #      changes in `recurrence.py`.
         apply_template = form.cleaned_data.get("apply_template")
         if apply_template is not None:
-            apply_template.apply_to(instance)
+            current_sig = blind_signature(instance.blind_levels.all())
+            template_sig = blind_signature(apply_template.levels.all())
+            if current_sig != template_sig:
+                apply_template.apply_to(instance)
 
-        if form.cleaned_data.get("save_as_template"):
-            requested = (form.cleaned_data.get("save_as_template_name") or "").strip()
-            name = requested or self._auto_template_name(instance)
-            try:
-                BlindStructureTemplate.create_from_tournament(instance, name=name)
-                self.message_user(
-                    request,
-                    _("Saved blind structure as template '%(n)s'.") % {"n": name},
-                )
-            except IntegrityError:
-                self.message_user(
-                    request,
-                    _("Template name '%(n)s' already exists; not saved.") % {"n": name},
-                    level=messages.WARNING,
-                )
+        # Auto-save the structure as a template whenever it's new. The
+        # dedup check inside `_save_as_template` short-circuits when
+        # the inline rows already match an existing template, so this
+        # is a no-op for unchanged tournaments and tournaments that
+        # loaded an existing template.
+        if list(instance.blind_levels.all()):
+            self._save_as_template(request, instance)
 
         if instance.series_master_id is None:
             regenerate_series(instance)
 
+    def _save_as_template(self, request, instance) -> None:
+        """Auto-save the tournament's blind structure as a template.
+
+        Dedup first: if an identical structure already exists no new
+        template is created. Otherwise a fresh template is created
+        with a content-derived auto-name.
+        """
+        sig = blind_signature(instance.blind_levels.all())
+        existing_id = template_id_for_signature(sig)
+        if existing_id is not None:
+            existing = BlindStructureTemplate.objects.get(pk=existing_id)
+            self.message_user(
+                request,
+                _("Blind structure matches existing template '%(n)s' — no new template created.")
+                % {"n": existing.name},
+                level=messages.INFO,
+            )
+            return
+        name = self._auto_template_name(instance)
+        try:
+            BlindStructureTemplate.create_from_tournament(instance, name=name)
+            self.message_user(
+                request,
+                _("Saved blind structure as template '%(n)s'.") % {"n": name},
+            )
+        except IntegrityError:
+            self.message_user(
+                request,
+                _("Template name '%(n)s' already exists; not saved.") % {"n": name},
+                level=messages.WARNING,
+            )
+
     @staticmethod
     def _auto_template_name(instance) -> str:
-        """Return a unique template name based on the tournament's name.
+        """Content-based name from the tournament's blind_levels.
 
-        Used when the editor leaves "New template name" blank. Mirrors
-        the naming used by the data migration so the library stays
-        coherent regardless of how rows enter it.
+        Returns e.g. '1-100(12)_5-1,600(150) [a1b2c3]'. The hash slice
+        is always present; equal signatures produce equal names, which
+        the dedup path in `_save_as_template` will collapse before any
+        new template is created.
         """
-        base = (f"Like {instance.name}")[:120]
-        name = base
-        n = 2
-        while BlindStructureTemplate.objects.filter(name=name).exists():
-            suffix = f" ({n})"
-            name = (base[: 120 - len(suffix)]) + suffix
-            n += 1
-        return name
+        rows = list(instance.blind_levels.all())
+        if not rows:
+            return f"Like {instance.name}"[:120]
+        return auto_template_name(rows)[:120]
 
     # --- "Save and add same" ---------------------------------------------
 
