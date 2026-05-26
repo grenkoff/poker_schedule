@@ -52,17 +52,16 @@
     }
 
     function clickAddRow() {
-        // Django admin's TabularInline renders the add link as the only
-        // <a> inside <tr.add-row> (or <a class="addlink">). Either selector
-        // resolves to a single anchor for our `blind_levels` inline.
-        var link =
-            document.querySelector(
-                '[id^="blind_levels-"] tr.add-row a, ' +
-                '.dynamic-form a.add-row, ' +
-                '.inline-related a.addlink'
-            ) ||
-            document.querySelector("tr.add-row a");
-        if (!link) return false;
+        // Django admin renders the tabular inline's add link as a single
+        // <a> inside <tr class="add-row">. Match it within the inline's
+        // own scope so a second inline on the page (none today, but
+        // robustness costs nothing) doesn't get clicked instead.
+        var scope = document.getElementById(FORMSET_PREFIX + "-group");
+        var link = (scope || document).querySelector("tr.add-row a");
+        if (!link) {
+            console.warn("[blind_template_apply] add-row link not found");
+            return false;
+        }
         link.click();
         return true;
     }
@@ -121,9 +120,14 @@
         try {
             levels = JSON.parse(raw);
         } catch (err) {
+            console.warn("[blind_template_apply] could not parse data-levels", err);
             return;
         }
         if (!Array.isArray(levels) || levels.length === 0) return;
+        console.info(
+            "[blind_template_apply] applying template '" + opt.text +
+            "' (" + levels.length + " rows) to the BLIND LEVELS inline"
+        );
         applyLevels(levels);
     }
 
