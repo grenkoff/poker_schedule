@@ -75,9 +75,9 @@ class BlindLevelTemplateInline(admin.TabularInline):
 @admin.register(BlindStructureTemplate)
 class BlindStructureTemplateAdmin(StaffAdminMixin, admin.ModelAdmin):
     list_display = ("name", "level_count", "created_at")
-    search_fields = ("name", "description")
+    search_fields = ("name",)
     ordering = ("name",)
-    fields = ("name", "description")
+    fields = ("name",)
     inlines = (BlindLevelTemplateInline,)
 
     class Media:
@@ -291,13 +291,7 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
             requested = (form.cleaned_data.get("save_as_template_name") or "").strip()
             name = requested or self._auto_template_name(instance)
             try:
-                BlindStructureTemplate.create_from_tournament(
-                    instance,
-                    name=name,
-                    description=str(
-                        _("Saved from tournament '%(t)s'") % {"t": instance.name}
-                    ),
-                )
+                BlindStructureTemplate.create_from_tournament(instance, name=name)
                 self.message_user(
                     request,
                     _("Saved blind structure as template '%(n)s'.") % {"n": name},

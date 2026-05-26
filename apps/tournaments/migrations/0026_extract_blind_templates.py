@@ -7,15 +7,13 @@ master's structure, so iterating masters is sufficient and avoids
 N-fold duplicates.
 
 Templates created here are auto-named "Like <tournament name>" so the
-editor can recognize their shape at a glance. The `description` field
-carries the audit marker that the reverse migration targets — manual
-renames in admin therefore don't break unseed.
+editor can recognize their shape at a glance.
 """
 
 from django.db import migrations
 
 
-_DESC_PREFIX = "Auto-extracted on migration from "
+_AUTO_NAME_PREFIX = "Like "
 
 
 def extract(apps, schema_editor):
@@ -39,17 +37,14 @@ def extract(apps, schema_editor):
         sig_to_source.setdefault(rows, tournament)
 
     for rows, source in sig_to_source.items():
-        base = f"Like {source.name}"[:120]
+        base = f"{_AUTO_NAME_PREFIX}{source.name}"[:120]
         name = base
         n = 2
         while BlindStructureTemplate.objects.filter(name=name).exists():
             suffix = f" ({n})"
             name = base[: 120 - len(suffix)] + suffix
             n += 1
-        template = BlindStructureTemplate.objects.create(
-            name=name,
-            description=f"{_DESC_PREFIX}'{source.name}'",
-        )
+        template = BlindStructureTemplate.objects.create(name=name)
         BlindLevelTemplate.objects.bulk_create(
             BlindLevelTemplate(
                 template=template,
@@ -64,7 +59,10 @@ def extract(apps, schema_editor):
 
 def unextract(apps, schema_editor):
     BlindStructureTemplate = apps.get_model("tournaments", "BlindStructureTemplate")
-    BlindStructureTemplate.objects.filter(description__startswith=_DESC_PREFIX).delete()
+    # The forward pass guarantees every auto-extracted template's name
+    # starts with `Like `. A user who later renames a template won't be
+    # caught — that's acceptable; rollback is a dev-only path.
+    BlindStructureTemplate.objects.filter(name__startswith=_AUTO_NAME_PREFIX).delete()
 
 
 class Migration(migrations.Migration):

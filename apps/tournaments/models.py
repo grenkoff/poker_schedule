@@ -346,7 +346,6 @@ class BlindStructureTemplate(models.Model):
     """
 
     name = models.CharField(_("name"), max_length=120, unique=True)
-    description = models.CharField(_("description"), max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -376,10 +375,8 @@ class BlindStructureTemplate(models.Model):
 
     @classmethod
     @transaction.atomic
-    def create_from_tournament(
-        cls, tournament, *, name: str, description: str = ""
-    ) -> "BlindStructureTemplate":
-        template = cls.objects.create(name=name, description=description)
+    def create_from_tournament(cls, tournament, *, name: str) -> "BlindStructureTemplate":
+        template = cls.objects.create(name=name)
         BlindLevelTemplate.objects.bulk_create(
             BlindLevelTemplate(
                 template=template,
