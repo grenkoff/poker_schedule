@@ -38,6 +38,16 @@
         );
     }
 
+    function rowElement(idx) {
+        // Walk up from one of the row's inputs to the enclosing <tr>.
+        // Used to hide excess rows so the inline visually matches the
+        // template's level count.
+        var anyInput = field(idx, "level");
+        var el = anyInput;
+        while (el && el.tagName !== "TR") el = el.parentNode;
+        return el;
+    }
+
     function setVal(input, value) {
         if (!input) return;
         input.value = value === null || value === undefined ? "" : String(value);
@@ -80,6 +90,7 @@
         for (var j = 0; j < rows.length; j++) {
             var idx = rows[j];
             var del = field(idx, "DELETE");
+            var row = rowElement(idx);
             if (j < need) {
                 var spec = levels[j];
                 // spec = [level, small_blind, big_blind, ante]
@@ -88,6 +99,9 @@
                 setVal(field(idx, "big_blind"), spec[2]);
                 setVal(field(idx, "ante"), spec[3] ? spec[3] : "");
                 if (del) del.checked = false;
+                // Restore visibility in case this row was previously
+                // hidden because a smaller template was loaded first.
+                if (row) row.style.display = "";
                 // Let autonumber's derive-small-blind handler observe the
                 // change so the row stays internally consistent for
                 // subsequent user edits.
@@ -95,7 +109,10 @@
             } else {
                 // Excess existing row beyond the template's length. Saved
                 // rows (those with a populated -id hidden input) get the
-                // DELETE flag; unsaved rows just have their values cleared.
+                // DELETE flag so Django removes them on submit; unsaved
+                // rows just have their values cleared. Either way the
+                // row is visually hidden so the inline only shows what
+                // the chosen template defines.
                 var idInput = field(idx, "id");
                 if (idInput && idInput.value && del) {
                     del.checked = true;
@@ -105,6 +122,7 @@
                     setVal(field(idx, "big_blind"), "");
                     setVal(field(idx, "ante"), "");
                 }
+                if (row) row.style.display = "none";
             }
         }
     }
