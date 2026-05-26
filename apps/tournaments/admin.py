@@ -220,13 +220,11 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         (
             _("Blind structure template"),
             {
-                "fields": (
-                    "apply_template",
-                    "save_as_template",
-                ),
+                "fields": ("apply_template",),
                 "description": _(
                     "Optionally load an existing template into the BLIND LEVELS "
-                    "table below, or save the entered rows as a new template."
+                    "table below. Any new structure not already in the library "
+                    "is saved as a new template automatically on save."
                 ),
             },
         ),
@@ -341,18 +339,23 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
             if current_sig != template_sig:
                 apply_template.apply_to(instance)
 
-        if form.cleaned_data.get("save_as_template"):
+        # Auto-save the structure as a template whenever it's new. The
+        # dedup check inside `_save_as_template` short-circuits when
+        # the inline rows already match an existing template, so this
+        # is a no-op for unchanged tournaments and tournaments that
+        # loaded an existing template.
+        if list(instance.blind_levels.all()):
             self._save_as_template(request, instance)
 
         if instance.series_master_id is None:
             regenerate_series(instance)
 
     def _save_as_template(self, request, instance) -> None:
-        """Run the save-as-template flow: dedup first, then create.
+        """Auto-save the tournament's blind structure as a template.
 
-        The template name is always auto-derived from the structure
-        — the editor has no say. If an identical structure already
-        exists no redundant template is created.
+        Dedup first: if an identical structure already exists no new
+        template is created. Otherwise a fresh template is created
+        with a content-derived auto-name.
         """
         sig = blind_signature(instance.blind_levels.all())
         existing_id = template_id_for_signature(sig)

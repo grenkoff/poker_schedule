@@ -356,15 +356,6 @@ class TournamentAdminForm(forms.ModelForm):
             "edits to this tournament."
         ),
     )
-    save_as_template = forms.BooleanField(
-        label=_("Save current blind structure as a new template"),
-        required=False,
-        help_text=_(
-            "The template is auto-named from the structure's shape "
-            "(e.g. '1-100(12)_5-1,600(150) [a1b2c3]'). If an identical "
-            "structure already exists no new template is created."
-        ),
-    )
 
     class Media:
         js = (

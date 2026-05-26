@@ -1094,14 +1094,16 @@ def test_admin_form_apply_template_initial_blank_when_no_match(pokerok):
 
 
 @pytest.mark.django_db
-def test_admin_form_save_as_template_is_valid_with_checkbox_only(pokerok):
-    """The form no longer carries a user-typed template name — checking
-    the box is sufficient; the name is auto-derived on save."""
+def test_admin_form_is_valid_without_template_extras(pokerok):
+    """The save-as-template machinery is fully implicit now — there is
+    no opt-in checkbox and no name field — and the form still validates."""
     from apps.tournaments.forms import TournamentAdminForm
 
-    data = _admin_post_payload(pokerok, save_as_template="on")
+    data = _admin_post_payload(pokerok)
     form = TournamentAdminForm(data=data)
     assert form.is_valid(), form.errors
+    assert "save_as_template" not in form.fields
+    assert "save_as_template_name" not in form.fields
 
 
 @pytest.mark.django_db
