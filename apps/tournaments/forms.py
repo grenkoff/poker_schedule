@@ -380,7 +380,7 @@ class TournamentAdminForm(forms.ModelForm):
             "admin/js/blind_template_apply.js",
             "admin/js/weekdays_presets.js",
         )
-        css = {"all": ("admin/css/tournament_form.css",)}
+        css = {"all": ("admin/css/tournament_form.css", "admin/css/blind_inline.css")}
 
     class Meta:
         model = Tournament

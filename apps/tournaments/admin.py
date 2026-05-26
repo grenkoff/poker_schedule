@@ -90,6 +90,7 @@ class BlindStructureTemplateAdmin(StaffAdminMixin, admin.ModelAdmin):
             "admin/js/integer_thousand_seps.js",
             "admin/js/blind_levels_autonumber.js",
         )
+        css = {"all": ("admin/css/blind_inline.css",)}
 
     @admin.display(description=_("levels"))
     def level_count(self, obj) -> int:

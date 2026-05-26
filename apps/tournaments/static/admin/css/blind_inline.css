@@ -1,0 +1,9 @@
+/* Hide Django's default per-row "original" label in the blind-level
+ * inlines (BlindStructure on Tournament, BlindLevelTemplate on
+ * BlindStructureTemplate). The model `__str__` (e.g. "L1: 50/100")
+ * duplicates information that's already in the row's input cells, so
+ * showing it just clutters the form. */
+#blind_levels-group td.original p,
+#levels-group td.original p {
+    display: none;
+}
