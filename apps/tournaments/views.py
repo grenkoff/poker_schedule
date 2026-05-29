@@ -1,8 +1,10 @@
 """Public-facing views over Tournament."""
 
+import json
+
 from django.core.paginator import Paginator
 from django.db.models import Q
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.shortcuts import render
 from django.utils import timezone
 
@@ -28,6 +30,13 @@ def tournament_list(request: HttpRequest) -> HttpResponse:
     table partial so the filter form above it is preserved — full-page
     loads stay as the SEO-friendly canonical response.
     """
+    # Restore last saved state for authenticated users on a clean URL load.
+    is_htmx = request.headers.get("HX-Request") == "true"
+    if not request.GET and not is_htmx and request.user.is_authenticated:
+        saved_params = (request.user.table_pref_json or {}).get("last_params", "")
+        if saved_params:
+            return HttpResponseRedirect(request.path + saved_params)
+
     # Show tournaments while late registration is still open — matches
     # what `prune_expired.js` removes client-side and what `TournamentAdmin`
     # filters on, so users don't see a row vanish before late-reg closes.
@@ -48,6 +57,10 @@ def tournament_list(request: HttpRequest) -> HttpResponse:
     current_key, current_desc = parse_sort(sort_value)
     sort_links = {key: toggle_value(sort_value, key) for key in SORT_FIELDS}
 
+    prefs = {}
+    if request.user.is_authenticated:
+        prefs = request.user.table_pref_json or {}
+
     context = {
         "filterset": filterset,
         "page_obj": page,
@@ -58,9 +71,9 @@ def tournament_list(request: HttpRequest) -> HttpResponse:
         "has_filters_applied": bool(request.GET.dict()),
         "columns": PUBLIC_COLUMNS,
         "search_query": q,
+        "table_prefs_json": json.dumps(prefs),
     }
 
-    is_htmx = request.headers.get("HX-Request") == "true"
     template = (
         "tournaments/_tournament_table.html" if is_htmx else "tournaments/tournament_list.html"
     )

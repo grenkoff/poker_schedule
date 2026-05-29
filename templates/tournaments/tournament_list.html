@@ -6,7 +6,11 @@
 
 {% block extra_head %}
     <link rel="stylesheet" href="{% static 'css/public_columns.css' %}">
-    <script src="{% static 'js/public_columns.js' %}" defer></script>
+    <script>
+        window.__TABLE_PREFS__ = {% if request.user.is_authenticated %}{{ table_prefs_json|safe }}{% else %}null{% endif %};
+        window.__TABLE_PREFS_SAVE_URL__ = "{% url 'users:save_table_prefs' %}";
+    </script>
+    <script src="{% static 'js/table_prefs.js' %}" defer></script>
     <script src="{% static 'js/localize_times.js' %}" defer></script>
     <script src="{% static 'js/sticky_hscroll.js' %}" defer></script>
     <script src="{% static 'js/sticky_thead.js' %}" defer></script>

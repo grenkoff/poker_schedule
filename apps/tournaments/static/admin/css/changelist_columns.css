@@ -273,3 +273,69 @@
     color: #ddd;
     cursor: default;
 }
+
+/* ---- TournamentFilter form embedded in admin changelist search block ---- */
+
+.tnmt-admin-filters {
+    margin-top: 10px;
+    border: 1px solid var(--border-color, #ccc);
+    border-radius: 4px;
+    padding: 0;
+}
+.tnmt-admin-filters summary {
+    padding: 6px 10px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 0.85rem;
+    color: var(--body-quiet-color, #666);
+    user-select: none;
+}
+.tnmt-admin-filters[open] summary {
+    border-bottom: 1px solid var(--border-color, #ccc);
+}
+.tnmt-admin-filter-form {
+    padding: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 20px;
+    align-items: flex-start;
+}
+.tnmt-filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 0.85rem;
+}
+.tnmt-filter-field label {
+    font-weight: bold;
+    color: var(--body-quiet-color, #666);
+}
+.tnmt-filter-field ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.tnmt-filter-field ul li {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.tnmt-filter-field input[type="number"],
+.tnmt-filter-field input[type="datetime-local"] {
+    padding: 3px 6px;
+    border: 1px solid var(--border-color, #ccc);
+    border-radius: 3px;
+    font-size: 0.85rem;
+    width: 130px;
+}
+.tnmt-filter-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    align-self: flex-end;
+    padding-bottom: 2px;
+}
+.tnmt-filter-actions a {
+    font-size: 0.85rem;
+    color: var(--link-fg, #417690);
+}

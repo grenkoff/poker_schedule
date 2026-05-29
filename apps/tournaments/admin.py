@@ -1,3 +1,5 @@
+import json
+
 from django.contrib import admin, messages
 from django.db import IntegrityError, transaction
 from django.http import HttpResponseRedirect
@@ -7,6 +9,7 @@ from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
+from apps.filters.filters import TournamentFilter
 from apps.users.admin_mixins import StaffAdminMixin
 
 from .columns import ALL_COLUMNS, Column
@@ -142,10 +145,11 @@ class BlindStructureTemplateAdmin(StaffAdminMixin, admin.ModelAdmin):
 @admin.register(Tournament)
 class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     form = TournamentAdminForm
+    change_list_template = "admin/tournaments/tournament/change_list.html"
 
     class Media:
         js = (
-            "admin/js/changelist_columns.js",
+            "js/table_prefs.js",
             "admin/js/series_filter.js",
             "js/localize_times.js",
             "js/sticky_hscroll.js",
@@ -274,6 +278,27 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
             formfield.empty_label = "---------"
         return formfield
 
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+
+        base_qs = super().get_queryset(request)
+        extra_context["filter_form"] = TournamentFilter(request.GET or None, queryset=base_qs)
+
+        prefs = {}
+        if request.user.is_authenticated:
+            prefs = request.user.table_pref_json or {}
+        extra_context["table_prefs_json"] = json.dumps(prefs)
+        extra_context["table_prefs_save_url"] = reverse("users:save_table_prefs")
+
+        # Restore last saved state on a clean URL load (exclude Django's own 'e' param).
+        meaningful_params = set(request.GET.keys()) - {"e"}
+        if not meaningful_params and request.user.is_authenticated:
+            saved_params = prefs.get("last_params", "")
+            if saved_params:
+                return HttpResponseRedirect(request.path + saved_params)
+
+        return super().changelist_view(request, extra_context=extra_context)
+
     def get_queryset(self, request):
         self._extend_recurring_series()
         qs = super().get_queryset(request)
@@ -285,10 +310,15 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         # stay filtered out.
         from django.db.models import Q
 
-        return qs.filter(
+        qs = qs.filter(
             Q(periodicity__interval_seconds__gt=0, series_master__isnull=True)
             | Q(late_reg_at__gte=timezone.now())
         )
+        if request.GET:
+            filterset = TournamentFilter(request.GET, queryset=qs)
+            if filterset.is_valid():
+                qs = filterset.qs
+        return qs
 
     def _extend_recurring_series(self) -> None:
         masters = (

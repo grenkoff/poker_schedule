@@ -7,7 +7,7 @@
     <thead>
     <tr>
         {% for col in columns %}
-        <th data-col-label="{{ col.label }}"{% if col.tz_aware %} data-tz-col{% endif %}{% if col.tz_picker %} data-tz-picker{% endif %}>
+        <th data-col-key="{{ col.key }}" data-col-label="{{ col.label }}"{% if col.tz_aware %} data-tz-col{% endif %}{% if col.tz_picker %} data-tz-picker{% endif %}>
             {% if col.sort_key %}
             <a href="?{% querystring sort=sort_links|dictlookup:col.sort_key page=None %}"
                hx-get="?{% querystring sort=sort_links|dictlookup:col.sort_key page=None %}"
