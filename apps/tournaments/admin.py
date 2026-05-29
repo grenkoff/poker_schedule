@@ -142,6 +142,29 @@ class BlindStructureTemplateAdmin(StaffAdminMixin, admin.ModelAdmin):
             )
 
 
+def _make_tournament_changelist():
+    """Return a ChangeList subclass that ignores TournamentFilter params.
+
+    Django admin's ChangeList treats every unrecognised GET param as an ORM
+    lookup, which raises FieldError → IncorrectLookupParameters → redirect to
+    ``?e=1``.  Removing the TournamentFilter keys from lookup_params lets
+    our overridden ``get_queryset`` apply them instead.
+    """
+    from django.contrib.admin.views.main import ChangeList
+
+    _tf_params = frozenset(TournamentFilter.base_filters.keys())
+
+    class TournamentChangeList(ChangeList):
+        def get_filters_params(self, params=None):
+            result = super().get_filters_params(params)
+            for k in _tf_params:
+                result.pop(k, None)
+            result.pop("_reset", None)
+            return result
+
+    return TournamentChangeList
+
+
 @admin.register(Tournament)
 class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     form = TournamentAdminForm
@@ -169,6 +192,9 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     search_fields = ("name", "room__name")
     inlines = (BlindStructureInline,)
     actions = ("mark_verified", "unmark_verified")
+
+    def get_changelist(self, request, **kwargs):
+        return _make_tournament_changelist()
 
     fieldsets = (
         (None, {"fields": ("room", "series", "name", "game_type")}),
@@ -290,12 +316,27 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         extra_context["table_prefs_json"] = json.dumps(prefs)
         extra_context["table_prefs_save_url"] = reverse("users:save_table_prefs")
 
-        # Restore last saved state on a clean URL load (exclude Django's own 'e' param).
-        meaningful_params = set(request.GET.keys()) - {"e"}
-        if not meaningful_params and request.user.is_authenticated:
+        # Restore last saved state on a clean URL load.
+        # Exclude Django admin's own meta-params and our reset flag.
+        _admin_meta = {"e", "p", "q", "o", "all", "t", "_popup", "_reset"}
+        meaningful_params = set(request.GET.keys()) - _admin_meta
+
+        # Explicit reset: clear saved filter/sort state and redirect to clean URL.
+        if "_reset" in request.GET and request.user.is_authenticated:
+            prefs["last_params"] = ""
+            request.user.table_pref_json = prefs
+            request.user.save(update_fields=["table_pref_json"])
+            return HttpResponseRedirect(request.path)
+
+        elif not meaningful_params and request.user.is_authenticated:
             saved_params = prefs.get("last_params", "")
+            # Validate saved_params: only redirect if they contain real filter
+            # keys (not just admin meta-params), to avoid redirect loops.
             if saved_params:
-                return HttpResponseRedirect(request.path + saved_params)
+                from urllib.parse import parse_qs
+                saved_keys = set(parse_qs(saved_params.lstrip("?")).keys())
+                if saved_keys - _admin_meta:
+                    return HttpResponseRedirect(request.path + saved_params)
 
         return super().changelist_view(request, extra_context=extra_context)
 

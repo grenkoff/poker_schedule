@@ -25,7 +25,7 @@
     {% if request.GET.q %}<input type="hidden" name="q" value="{{ request.GET.q }}">{% endif %}
     <div class="tnmt-filter-actions">
       <button type="submit" class="button">{% trans "Apply" %}</button>
-      <a href="{{ request.path }}">{% trans "Reset" %}</a>
+      <a href="{{ request.path }}?_reset=1">{% trans "Reset" %}</a>
     </div>
   </form>
 </details>

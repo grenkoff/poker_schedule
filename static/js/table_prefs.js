@@ -14,21 +14,22 @@
 
     var LS_KEY = "tnmt-changelist-cols:v2";
 
-    // Injected by the server into the page before this script loads.
-    var SERVER_PREFS = (typeof window.__TABLE_PREFS__ !== "undefined") ? window.__TABLE_PREFS__ : undefined;
-    var SAVE_URL = (typeof window.__TABLE_PREFS_SAVE_URL__ !== "undefined") ? window.__TABLE_PREFS_SAVE_URL__ : null;
-    var IS_AUTHENTICATED = SERVER_PREFS !== null && SERVER_PREFS !== undefined;
+    // Read window globals lazily — the inline script that sets them may run
+    // AFTER this module (e.g. Django admin places {{ media }} before {% block extrahead %}).
+    function getServerPrefs() {
+        return (typeof window.__TABLE_PREFS__ !== "undefined") ? window.__TABLE_PREFS__ : undefined;
+    }
+    function getSaveUrl() {
+        return (typeof window.__TABLE_PREFS_SAVE_URL__ !== "undefined") ? window.__TABLE_PREFS_SAVE_URL__ : null;
+    }
+    function isAuthenticated() {
+        var sp = getServerPrefs();
+        return sp !== null && sp !== undefined;
+    }
 
-    // Detect which page we're on.
-    var CONTEXT = (function () {
-        var pub = document.querySelector("table[data-public-columns]");
-        var adm = document.getElementById("result_list");
-        if (pub) return { table: pub, mode: "public" };
-        if (adm) return { table: adm, mode: "admin" };
-        return null;
-    }());
-
-    if (!CONTEXT) return;
+    // Detected in init() after DOMContentLoaded, because Media-class scripts
+    // run in <head> before #result_list is rendered on admin pages.
+    var CONTEXT = null;
 
     // Label of the pinned (always-first, non-movable, non-hideable) column.
     // Determined once at init from the raw DOM before any reordering.
@@ -83,11 +84,12 @@
     }
 
     function loadPrefs() {
-        // 1. Server-side (authenticated).
-        if (IS_AUTHENTICATED && SERVER_PREFS && Array.isArray(SERVER_PREFS.columns) && SERVER_PREFS.columns.length) {
-            return SERVER_PREFS;
+        // 1. Server-side prefs (read lazily so the inline script has had a chance to run).
+        var sp = getServerPrefs();
+        if (sp !== null && sp !== undefined && sp && Array.isArray(sp.columns) && sp.columns.length) {
+            return sp;
         }
-        // 2. localStorage fallback.
+        // 2. localStorage fallback (anonymous users or first load before server write).
         try {
             var raw = JSON.parse(localStorage.getItem(LS_KEY) || "null");
             if (raw && Array.isArray(raw.columns) && raw.columns.length) return raw;
@@ -99,24 +101,17 @@
         // Always cache locally for instant re-apply on next load (avoids FOUC).
         try { localStorage.setItem(LS_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ }
 
-        if (!IS_AUTHENTICATED || !SAVE_URL) return;
+        var saveUrl = getSaveUrl();
+        if (!isAuthenticated() || !saveUrl) return;
 
-        var body = JSON.stringify(prefs);
-        // sendBeacon survives page unload / reload.
-        if (navigator.sendBeacon) {
-            var blob = new Blob([body], { type: "application/json" });
-            // sendBeacon doesn't support custom headers; Django checks the
-            // CSRF cookie via the middleware's cookie-fallback path.
-            // We use fetch for reliability and include the header explicitly.
-        }
-        // Use fetch (fire-and-forget — no await).
-        fetch(SAVE_URL, {
+        // Use fetch with keepalive (fire-and-forget, survives page reload).
+        fetch(saveUrl, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
                 "X-CSRFToken": getCsrfToken(),
             },
-            body: body,
+            body: JSON.stringify(prefs),
             keepalive: true,
         }).catch(function () { /* best-effort */ });
     }
@@ -463,14 +458,29 @@
 
     function persistParams() {
         if (!location.search) return;
+        var params = new URLSearchParams(location.search);
+        // Never restore these transient params.
+        ["e", "p", "_reset"].forEach(function(k) { params.delete(k); });
+        var cleaned = params.toString();
+        if (!cleaned) return;
         var prefs = loadPrefs();
-        prefs.last_params = location.search;
+        prefs.last_params = "?" + cleaned;
         savePrefs(prefs);
     }
 
     // ---- init -------------------------------------------------------------
 
     function init() {
+        // Detect which page we're on — done here (not at module level) because
+        // Django admin's Media-class scripts are placed in <head> before the
+        // result_list table is rendered, so the element doesn't exist yet at
+        // IIFE evaluation time.
+        var pub = document.querySelector("table[data-public-columns]");
+        var adm = document.getElementById("result_list");
+        if (pub) CONTEXT = { table: pub, mode: "public" };
+        else if (adm) CONTEXT = { table: adm, mode: "admin" };
+        if (!CONTEXT) return;
+
         var table = CONTEXT.table;
 
         // Capture pinned key from raw DOM before any reordering.

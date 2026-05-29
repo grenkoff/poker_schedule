@@ -30,12 +30,23 @@ def tournament_list(request: HttpRequest) -> HttpResponse:
     table partial so the filter form above it is preserved — full-page
     loads stay as the SEO-friendly canonical response.
     """
-    # Restore last saved state for authenticated users on a clean URL load.
     is_htmx = request.headers.get("HX-Request") == "true"
-    if not request.GET and not is_htmx and request.user.is_authenticated:
+    _public_meta = {"page", "e", "_reset"}
+
+    if "_reset" in request.GET and request.user.is_authenticated:
+        # Explicit reset: clear saved filter/sort state.
+        prefs = request.user.table_pref_json or {}
+        prefs["last_params"] = ""
+        request.user.table_pref_json = prefs
+        request.user.save(update_fields=["table_pref_json"])
+    elif not request.GET and not is_htmx and request.user.is_authenticated:
+        # Restore last saved state on a clean URL load.
         saved_params = (request.user.table_pref_json or {}).get("last_params", "")
         if saved_params:
-            return HttpResponseRedirect(request.path + saved_params)
+            from urllib.parse import parse_qs
+            saved_keys = set(parse_qs(saved_params.lstrip("?")).keys())
+            if saved_keys - _public_meta:
+                return HttpResponseRedirect(request.path + saved_params)
 
     # Show tournaments while late registration is still open — matches
     # what `prune_expired.js` removes client-side and what `TournamentAdmin`

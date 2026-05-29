@@ -28,8 +28,8 @@
 
     <div class="filter-actions">
         <button type="submit">{% trans "Apply filters" %}</button>
-        <a href="{% url 'tournaments:list' %}"
-           hx-get="{% url 'tournaments:list' %}"
+        <a href="{% url 'tournaments:list' %}?_reset=1"
+           hx-get="{% url 'tournaments:list' %}?_reset=1"
            hx-target="#tournament-table"
            hx-push-url="true"
            class="btn-secondary">{% trans "Reset" %}</a>
