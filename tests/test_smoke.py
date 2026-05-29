@@ -20,3 +20,21 @@ def test_home_renders(client: Client) -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert b"Poker Schedule" in response.content
+
+
+@pytest.mark.django_db
+def test_admin_login_renders(client: Client) -> None:
+    response = client.get("/admin/login/")
+    assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_accounts_login_renders(client: Client) -> None:
+    response = client.get("/accounts/login/")
+    assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_unknown_path_returns_404(client: Client) -> None:
+    response = client.get("/does-not-exist-xyz/")
+    assert response.status_code == 404
