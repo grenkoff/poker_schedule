@@ -94,3 +94,11 @@ filterwarnings = [
     # Django 6.0 and pass `assume_scheme="https"` where needed.
     "ignore::django.utils.deprecation.RemovedInDjango60Warning",
 ]
+
+[tool.coverage.run]
+source = ["apps"]
+omit = ["*/migrations/*", "*/test_*", "*/tests*"]
+
+[tool.coverage.report]
+fail_under = 60
+show_missing = true

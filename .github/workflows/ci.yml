@@ -77,4 +77,4 @@ jobs:
       - name: Compile messages
         run: uv run python manage.py compilemessages --ignore=.venv
       - name: Run tests
-        run: uv run pytest
+        run: uv run pytest --cov=apps --cov-report=term-missing
