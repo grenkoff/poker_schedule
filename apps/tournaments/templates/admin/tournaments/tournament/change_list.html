@@ -12,7 +12,7 @@
 {% block search %}
 {{ block.super }}
 {% if filter_form %}
-<details class="tnmt-admin-filters" {% if request.GET %}open{% endif %}>
+<details class="tnmt-admin-filters">
   <summary>{% trans "Filters" %}</summary>
   <form method="get" class="tnmt-admin-filter-form">
     {% for field in filter_form.form.visible_fields %}
