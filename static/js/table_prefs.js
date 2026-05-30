@@ -488,6 +488,22 @@
         // Load and apply saved column layout.
         applyPrefs(table, loadColumns());
 
+        // Live cross-tab/cross-page sync: persist() writes localStorage, which
+        // fires a "storage" event in every OTHER same-origin tab. Re-apply the
+        // new column layout to the open table without a reload, so configuring
+        // columns on the main page updates an already-open admin table (and
+        // vice versa). Sort/filter changes still need a navigation since they
+        // require a new server query.
+        window.addEventListener("storage", function (e) {
+            if (e.key !== LS_KEY || !e.newValue) return;
+            try {
+                var data = JSON.parse(e.newValue);
+                if (data && Array.isArray(data.columns)) {
+                    applyPrefs(CONTEXT.table, data.columns);
+                }
+            } catch (err) { /* ignore */ }
+        });
+
         if (CONTEXT.mode === "public") {
             bindTriggerPublic(table);
 
