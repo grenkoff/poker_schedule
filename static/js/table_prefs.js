@@ -99,14 +99,22 @@
     // Persist current column layout + this page's sort/filter URL state.
     // The server parses `params` (per `mode`) into a semantic sort/filter
     // record so it replays correctly on the other table.
+    //
+    // Returns a Promise that resolves once the server has stored the prefs.
+    // Callers that reload immediately afterwards (the modal's Apply) MUST wait
+    // for it — otherwise the reload's GET races the POST and the page renders
+    // from stale server prefs (window.__TABLE_PREFS__), which loadColumns()
+    // prefers over the fresh localStorage value.
     function persist(columns) {
         columns = columns || loadColumns();
+        // Synchronous localStorage write also fires the cross-tab "storage"
+        // event, so other open tabs update live.
         try { localStorage.setItem(LS_KEY, JSON.stringify({ columns: columns })); } catch (e) { /* ignore */ }
 
         var saveUrl = getSaveUrl();
-        if (!isAuthenticated() || !saveUrl) return;
+        if (!isAuthenticated() || !saveUrl) return Promise.resolve();
 
-        fetch(saveUrl, {
+        return fetch(saveUrl, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -117,7 +125,6 @@
                 params: location.search,
                 mode: CONTEXT ? CONTEXT.mode : "public",
             }),
-            keepalive: true,
         }).catch(function () { /* best-effort */ });
     }
 
@@ -419,8 +426,17 @@
                 return { key: key, visible: cb ? cb.checked : true };
             }).filter(function (p) { return p.key; });
 
-            persist(newCols);
-            location.reload();
+            // Wait for the server to store the prefs before reloading, so the
+            // reloaded page renders from the new prefs (not stale ones). Apply
+            // them to the live table immediately too, and cap the wait so a
+            // stalled request can't leave the modal hanging.
+            applyBtn.disabled = true;
+            applyPrefs(CONTEXT.table, newCols);
+
+            var reloaded = false;
+            function reloadOnce() { if (!reloaded) { reloaded = true; location.reload(); } }
+            persist(newCols).then(reloadOnce);
+            setTimeout(reloadOnce, 2000);
         });
 
         backdrop.appendChild(modal);
