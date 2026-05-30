@@ -12,6 +12,8 @@ from django.utils.translation import gettext_lazy as _
 from apps.filters.filters import TournamentFilter
 from apps.users.admin_mixins import StaffAdminMixin
 
+from .table_state import build_search
+
 from .columns import ALL_COLUMNS, Column
 from .forms import (
     BlindLevelTemplateInlineForm,
@@ -143,24 +145,21 @@ class BlindStructureTemplateAdmin(StaffAdminMixin, admin.ModelAdmin):
 
 
 def _make_tournament_changelist():
-    """Return a ChangeList subclass that ignores TournamentFilter params.
+    """Return a ChangeList that never treats GET params as ORM lookups.
 
-    Django admin's ChangeList treats every unrecognised GET param as an ORM
-    lookup, which raises FieldError → IncorrectLookupParameters → redirect to
-    ``?e=1``.  Removing the TournamentFilter keys from lookup_params lets
-    our overridden ``get_queryset`` apply them instead.
+    Django admin's ChangeList passes every unrecognised GET param to
+    ``queryset.filter()``, which raises FieldError → IncorrectLookupParameters
+    → redirect to ``?e=1``.  We apply all filtering ourselves in
+    ``get_queryset`` (via TournamentFilter) and let the admin handle ordering
+    (``o``) and search (``q``) natively, so the changelist needs no lookup
+    params at all — returning an empty dict guarantees no ``?e=1`` bounce
+    regardless of what's in the URL.
     """
     from django.contrib.admin.views.main import ChangeList
 
-    _tf_params = frozenset(TournamentFilter.base_filters.keys())
-
     class TournamentChangeList(ChangeList):
         def get_filters_params(self, params=None):
-            result = super().get_filters_params(params)
-            for k in _tf_params:
-                result.pop(k, None)
-            result.pop("_reset", None)
-            return result
+            return {}
 
     return TournamentChangeList
 
@@ -316,27 +315,22 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         extra_context["table_prefs_json"] = json.dumps(prefs)
         extra_context["table_prefs_save_url"] = reverse("users:save_table_prefs")
 
-        # Restore last saved state on a clean URL load.
-        # Exclude Django admin's own meta-params and our reset flag.
-        _admin_meta = {"e", "p", "q", "o", "all", "t", "_popup", "_reset"}
-        meaningful_params = set(request.GET.keys()) - _admin_meta
-
-        # Explicit reset: clear saved filter/sort state and redirect to clean URL.
+        # Explicit reset: clear saved sort/filter state, redirect to clean URL.
         if "_reset" in request.GET and request.user.is_authenticated:
-            prefs["last_params"] = ""
+            prefs["sort"] = None
+            prefs["filters"] = ""
             request.user.table_pref_json = prefs
             request.user.save(update_fields=["table_pref_json"])
             return HttpResponseRedirect(request.path)
 
-        elif not meaningful_params and request.user.is_authenticated:
-            saved_params = prefs.get("last_params", "")
-            # Validate saved_params: only redirect if they contain real filter
-            # keys (not just admin meta-params), to avoid redirect loops.
-            if saved_params:
-                from urllib.parse import parse_qs
-                saved_keys = set(parse_qs(saved_params.lstrip("?")).keys())
-                if saved_keys - _admin_meta:
-                    return HttpResponseRedirect(request.path + saved_params)
+        # Clean URL load — restore saved sort/filter state by redirecting to
+        # the admin-formatted URL (?o=… for sort, TournamentFilter params).
+        # `build_search` only ever emits valid params, so this can't loop.
+        _ignorable = {"e", "_reset", "_popup"}
+        if not (set(request.GET.keys()) - _ignorable) and request.user.is_authenticated:
+            target = build_search(prefs, "admin")
+            if target:
+                return HttpResponseRedirect(request.path + target)
 
         return super().changelist_view(request, extra_context=extra_context)
 

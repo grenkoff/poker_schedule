@@ -13,6 +13,7 @@ from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 
 from apps.tournaments.columns import ALL_COLUMNS
+from apps.tournaments.table_state import parse_params
 
 from .forms import TIMEZONE_SUGGESTIONS, ProfileForm
 
@@ -38,7 +39,14 @@ def profile(request: HttpRequest) -> HttpResponse:
 @login_required
 @require_POST
 def save_table_prefs(request: HttpRequest) -> JsonResponse:
-    """POST /profile/table-prefs/ — persist column order/visibility, sort and filter state."""
+    """POST /profile/table-prefs/ — persist column order/visibility plus the
+    page's sort/filter state.
+
+    The client sends ``{columns, params, mode}`` where ``params`` is the page's
+    raw query string and ``mode`` is ``"public"`` or ``"admin"``. Sort/filter
+    state is stored semantically (by column key) so it can be replayed on the
+    other table, whose sort URL format differs.
+    """
     try:
         payload = json.loads(request.body)
     except (ValueError, TypeError):
@@ -51,9 +59,13 @@ def save_table_prefs(request: HttpRequest) -> JsonResponse:
     valid_keys = {c.key for c in ALL_COLUMNS}
     columns = [c for c in columns if isinstance(c, dict) and c.get("key") in valid_keys]
 
+    mode = "admin" if payload.get("mode") == "admin" else "public"
+    sort, filters = parse_params(str(payload.get("params", "")), mode)
+
     request.user.table_pref_json = {
         "columns": columns,
-        "last_params": str(payload.get("last_params", "")),
+        "sort": sort,
+        "filters": filters,
     }
     request.user.save(update_fields=["table_pref_json"])
     return JsonResponse({"ok": True})

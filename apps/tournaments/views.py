@@ -19,6 +19,7 @@ from apps.filters.sort import (
 
 from .columns import PUBLIC_COLUMNS
 from .models import Tournament
+from .table_state import build_search
 
 PAGE_SIZE = 50
 
@@ -31,22 +32,26 @@ def tournament_list(request: HttpRequest) -> HttpResponse:
     loads stay as the SEO-friendly canonical response.
     """
     is_htmx = request.headers.get("HX-Request") == "true"
-    _public_meta = {"page", "e", "_reset"}
+    # Params that don't count as "user has navigated to a specific view".
+    _ignorable = {"e", "_reset"}
 
     if "_reset" in request.GET and request.user.is_authenticated:
-        # Explicit reset: clear saved filter/sort state.
+        # Explicit reset: clear saved sort/filter state.
         prefs = request.user.table_pref_json or {}
-        prefs["last_params"] = ""
+        prefs["sort"] = None
+        prefs["filters"] = ""
         request.user.table_pref_json = prefs
         request.user.save(update_fields=["table_pref_json"])
-    elif not request.GET and not is_htmx and request.user.is_authenticated:
-        # Restore last saved state on a clean URL load.
-        saved_params = (request.user.table_pref_json or {}).get("last_params", "")
-        if saved_params:
-            from urllib.parse import parse_qs
-            saved_keys = set(parse_qs(saved_params.lstrip("?")).keys())
-            if saved_keys - _public_meta:
-                return HttpResponseRedirect(request.path + saved_params)
+    elif (
+        not is_htmx
+        and request.user.is_authenticated
+        and not (set(request.GET.keys()) - _ignorable)
+    ):
+        # Clean URL load — restore the user's saved sort/filter state by
+        # redirecting to the public-formatted URL.
+        target = build_search(request.user.table_pref_json or {}, "public")
+        if target:
+            return HttpResponseRedirect(request.path + target)
 
     # Show tournaments while late registration is still open — matches
     # what `prune_expired.js` removes client-side and what `TournamentAdmin`

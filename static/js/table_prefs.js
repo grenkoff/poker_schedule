@@ -83,35 +83,40 @@
         return m ? decodeURIComponent(m[1]) : "";
     }
 
-    function loadPrefs() {
-        // 1. Server-side prefs (read lazily so the inline script has had a chance to run).
+    // The ordered column layout — array of {key, visible}. Source of truth is
+    // the server (window.__TABLE_PREFS__.columns) for authenticated users,
+    // localStorage otherwise.
+    function loadColumns() {
         var sp = getServerPrefs();
-        if (sp !== null && sp !== undefined && sp && Array.isArray(sp.columns) && sp.columns.length) {
-            return sp;
-        }
-        // 2. localStorage fallback (anonymous users or first load before server write).
+        if (sp && Array.isArray(sp.columns) && sp.columns.length) return sp.columns;
         try {
             var raw = JSON.parse(localStorage.getItem(LS_KEY) || "null");
-            if (raw && Array.isArray(raw.columns) && raw.columns.length) return raw;
+            if (raw && Array.isArray(raw.columns)) return raw.columns;
         } catch (e) { /* ignore */ }
-        return {};
+        return [];
     }
 
-    function savePrefs(prefs) {
-        // Always cache locally for instant re-apply on next load (avoids FOUC).
-        try { localStorage.setItem(LS_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ }
+    // Persist current column layout + this page's sort/filter URL state.
+    // The server parses `params` (per `mode`) into a semantic sort/filter
+    // record so it replays correctly on the other table.
+    function persist(columns) {
+        columns = columns || loadColumns();
+        try { localStorage.setItem(LS_KEY, JSON.stringify({ columns: columns })); } catch (e) { /* ignore */ }
 
         var saveUrl = getSaveUrl();
         if (!isAuthenticated() || !saveUrl) return;
 
-        // Use fetch with keepalive (fire-and-forget, survives page reload).
         fetch(saveUrl, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
                 "X-CSRFToken": getCsrfToken(),
             },
-            body: JSON.stringify(prefs),
+            body: JSON.stringify({
+                columns: columns,
+                params: location.search,
+                mode: CONTEXT ? CONTEXT.mode : "public",
+            }),
             keepalive: true,
         }).catch(function () { /* best-effort */ });
     }
@@ -314,8 +319,7 @@
     // ---- modal ------------------------------------------------------------
 
     function buildModal(table) {
-        var prefs = loadPrefs();
-        var savedCols = Array.isArray(prefs.columns) ? prefs.columns : [];
+        var savedCols = loadColumns();
         var domKeys = allKeys(table);
 
         var ordered = savedCols.filter(function (p) { return domKeys.indexOf(p.key) !== -1; });
@@ -415,9 +419,7 @@
                 return { key: key, visible: cb ? cb.checked : true };
             }).filter(function (p) { return p.key; });
 
-            var currentPrefs = loadPrefs();
-            currentPrefs.columns = newCols;
-            savePrefs(currentPrefs);
+            persist(newCols);
             location.reload();
         });
 
@@ -455,17 +457,13 @@
     }
 
     // ---- sort/filter state persistence ------------------------------------
+    // Send the page's current URL state to the server, which parses it into a
+    // semantic sort/filter record. Skip transient/empty URLs.
 
     function persistParams() {
         if (!location.search) return;
-        var params = new URLSearchParams(location.search);
-        // Never restore these transient params.
-        ["e", "p", "_reset"].forEach(function(k) { params.delete(k); });
-        var cleaned = params.toString();
-        if (!cleaned) return;
-        var prefs = loadPrefs();
-        prefs.last_params = "?" + cleaned;
-        savePrefs(prefs);
+        if (location.search.indexOf("_reset") !== -1) return;
+        persist(loadColumns());
     }
 
     // ---- init -------------------------------------------------------------
@@ -487,22 +485,17 @@
         var firstKey = allKeys(table)[0] || null;
         pinnedKey = firstKey;
 
-        // Load and apply saved column prefs.
-        var prefs = loadPrefs();
-        var savedCols = Array.isArray(prefs.columns) ? prefs.columns : [];
-        applyPrefs(table, savedCols);
+        // Load and apply saved column layout.
+        applyPrefs(table, loadColumns());
 
         if (CONTEXT.mode === "public") {
             bindTriggerPublic(table);
 
-            // After HTMX swaps the table partial, re-apply prefs.
+            // After HTMX swaps the table partial, re-apply the column layout.
             document.body.addEventListener("htmx:afterSwap", function (e) {
                 if (e.target && e.target.id === "tournament-table") {
                     var t = document.querySelector("table[data-public-columns]");
-                    if (t) {
-                        var p = loadPrefs();
-                        applyPrefs(t, Array.isArray(p.columns) ? p.columns : []);
-                    }
+                    if (t) applyPrefs(t, loadColumns());
                 }
             });
 
