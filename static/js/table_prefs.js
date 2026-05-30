@@ -105,8 +105,9 @@
     // for it — otherwise the reload's GET races the POST and the page renders
     // from stale server prefs (window.__TABLE_PREFS__), which loadColumns()
     // prefers over the fresh localStorage value.
-    function persist(columns) {
+    function persist(columns, params) {
         columns = columns || loadColumns();
+        var search = (params !== undefined && params !== null) ? params : location.search;
         // Synchronous localStorage write also fires the cross-tab "storage"
         // event (fallback notification for other tabs).
         try { localStorage.setItem(LS_KEY, JSON.stringify({ columns: columns })); } catch (e) { /* ignore */ }
@@ -125,7 +126,7 @@
             },
             body: JSON.stringify({
                 columns: columns,
-                params: location.search,
+                params: search,
                 mode: CONTEXT ? CONTEXT.mode : "public",
             }),
         }).then(function () {
@@ -493,10 +494,14 @@
     // Send the page's current URL state to the server, which parses it into a
     // semantic sort/filter record. Skip transient/empty URLs.
 
-    function persistParams() {
-        if (!location.search) return;
-        if (location.search.indexOf("_reset") !== -1) return;
-        persist(loadColumns());
+    function persistParams(searchOverride) {
+        // hx-push-url updates location.search AFTER htmx:afterSettle, so callers
+        // pass the request's query string explicitly; fall back to the URL.
+        var search = (searchOverride !== undefined && searchOverride !== null)
+            ? searchOverride : location.search;
+        if (!search) return;
+        if (search.indexOf("_reset") !== -1) return;
+        persist(loadColumns(), search);
     }
 
     // ---- init -------------------------------------------------------------
@@ -588,9 +593,16 @@
                 }
             });
 
-            // Save sort/filter state whenever HTMX settles (URL updated via hx-push-url).
-            document.body.addEventListener("htmx:afterSettle", function () {
-                persistParams();
+            // Save sort/filter state whenever HTMX settles. location.search isn't
+            // updated yet at this point, so take the query from the request path.
+            document.body.addEventListener("htmx:afterSettle", function (e) {
+                var search = location.search;
+                var pi = e.detail && e.detail.pathInfo;
+                var reqPath = pi && (pi.finalRequestPath || pi.requestPath);
+                if (reqPath && reqPath.indexOf("?") >= 0) {
+                    search = reqPath.slice(reqPath.indexOf("?"));
+                }
+                persistParams(search);
             });
 
         } else {
