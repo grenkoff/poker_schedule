@@ -520,6 +520,32 @@
             } catch (err) { /* ignore */ }
         });
 
+        // Robust live sync across windows AND browser profiles: when this
+        // window regains focus, pull the latest column layout from the server
+        // (the storage event only covers same-profile tabs). Cheap GET, only
+        // on focus, debounced.
+        var lastResync = 0;
+        function resyncFromServer() {
+            var url = getSaveUrl();
+            if (!isAuthenticated() || !url) return;
+            var now = Date.now();
+            if (now - lastResync < 500) return;
+            lastResync = now;
+            fetch(url, { credentials: "same-origin", headers: { "Accept": "application/json" } })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data && Array.isArray(data.columns)) {
+                        try { localStorage.setItem(LS_KEY, JSON.stringify({ columns: data.columns })); } catch (e) { /* ignore */ }
+                        applyPrefs(CONTEXT.table, data.columns);
+                    }
+                })
+                .catch(function () { /* best-effort */ });
+        }
+        document.addEventListener("visibilitychange", function () {
+            if (!document.hidden) resyncFromServer();
+        });
+        window.addEventListener("focus", resyncFromServer);
+
         if (CONTEXT.mode === "public") {
             bindTriggerPublic(table);
 

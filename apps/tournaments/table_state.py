@@ -29,6 +29,15 @@ _KEY_BY_INDEX = {i + 1: c.key for i, c in enumerate(ALL_COLUMNS)}
 _INDEX_BY_KEY = {c.key: i + 1 for i, c in enumerate(ALL_COLUMNS) if c.db_field}
 
 
+def _allowed_filter_keys() -> set[str]:
+    """Recognised filter param names: TournamentFilter fields + the `q` search.
+
+    Imported lazily to avoid an import cycle (filters → models → …)."""
+    from apps.filters.filters import TournamentFilter
+
+    return set(TournamentFilter.base_filters.keys()) | {"q"}
+
+
 def parse_params(search: str, mode: str) -> tuple[dict | None, str]:
     """Parse a raw query string into ``(sort, filters)``.
 
@@ -37,13 +46,14 @@ def parse_params(search: str, mode: str) -> tuple[dict | None, str]:
     with sort/order/meta params and blank values removed.
     """
     items = parse_qsl(search.lstrip("?"), keep_blank_values=False)
-    meta = _ADMIN_META if mode == "admin" else _PUBLIC_META
+    allowed = _allowed_filter_keys()
 
-    # Drop meta params and BooleanFilter "no selection" sentinels ("unknown"),
-    # which carry no filtering intent and would otherwise clutter the stored
-    # state and the restored URL.
+    # Keep ONLY recognised filter keys. This drops sort/order/meta params and,
+    # crucially, any junk keys (e.g. a stray "??sort" from a malformed URL) so
+    # corruption can never be stored and replayed back into the URL.
+    # Also drop BooleanFilter "no selection" sentinels ("unknown").
     filters = urlencode(
-        [(k, v) for k, v in items if k not in meta and v != "unknown"]
+        [(k, v) for k, v in items if k in allowed and v != "unknown"]
     )
 
     sort = None

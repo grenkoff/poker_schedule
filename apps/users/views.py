@@ -10,8 +10,6 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext as _
-from django.views.decorators.http import require_POST
-
 from apps.tournaments.columns import ALL_COLUMNS
 from apps.tournaments.table_state import parse_params
 
@@ -37,16 +35,22 @@ def profile(request: HttpRequest) -> HttpResponse:
 
 
 @login_required
-@require_POST
 def save_table_prefs(request: HttpRequest) -> JsonResponse:
-    """POST /profile/table-prefs/ — persist column order/visibility plus the
-    page's sort/filter state.
+    """GET/POST /profile/table-prefs/ — read or persist the table prefs.
 
+    GET returns the stored ``{columns, sort, filters}`` so an open tab can
+    re-sync from the server on focus (works even across browser profiles,
+    where localStorage isn't shared).
+
+    POST persists column order/visibility plus the page's sort/filter state.
     The client sends ``{columns, params, mode}`` where ``params`` is the page's
     raw query string and ``mode`` is ``"public"`` or ``"admin"``. Sort/filter
     state is stored semantically (by column key) so it can be replayed on the
     other table, whose sort URL format differs.
     """
+    if request.method == "GET":
+        return JsonResponse(request.user.table_pref_json or {})
+
     try:
         payload = json.loads(request.body)
     except (ValueError, TypeError):
