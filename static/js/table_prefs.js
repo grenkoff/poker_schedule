@@ -108,11 +108,14 @@
     function persist(columns) {
         columns = columns || loadColumns();
         // Synchronous localStorage write also fires the cross-tab "storage"
-        // event, so other open tabs update live.
+        // event (fallback notification for other tabs).
         try { localStorage.setItem(LS_KEY, JSON.stringify({ columns: columns })); } catch (e) { /* ignore */ }
 
         var saveUrl = getSaveUrl();
-        if (!isAuthenticated() || !saveUrl) return Promise.resolve();
+        if (!isAuthenticated() || !saveUrl) {
+            notifyOtherTabs();
+            return Promise.resolve();
+        }
 
         return fetch(saveUrl, {
             method: "POST",
@@ -125,7 +128,21 @@
                 params: location.search,
                 mode: CONTEXT ? CONTEXT.mode : "public",
             }),
+        }).then(function () {
+            // Tell other tabs to pull the new state once the server has it.
+            notifyOtherTabs();
         }).catch(function () { /* best-effort */ });
+    }
+
+    // ---- cross-tab notification (BroadcastChannel, primary) ---------------
+
+    var bc = null;
+    try {
+        if (typeof BroadcastChannel !== "undefined") bc = new BroadcastChannel("tnmt-table-prefs");
+    } catch (e) { bc = null; }
+
+    function notifyOtherTabs() {
+        try { if (bc) bc.postMessage({ t: Date.now() }); } catch (e) { /* ignore */ }
     }
 
     // ---- sticky column helpers --------------------------------------------
@@ -504,43 +521,57 @@
         // Load and apply saved column layout.
         applyPrefs(table, loadColumns());
 
-        // Live cross-tab/cross-page sync: persist() writes localStorage, which
-        // fires a "storage" event in every OTHER same-origin tab. Re-apply the
-        // new column layout to the open table without a reload, so configuring
-        // columns on the main page updates an already-open admin table (and
-        // vice versa). Sort/filter changes still need a navigation since they
-        // require a new server query.
-        window.addEventListener("storage", function (e) {
-            if (e.key !== LS_KEY || !e.newValue) return;
-            try {
-                var data = JSON.parse(e.newValue);
-                if (data && Array.isArray(data.columns)) {
-                    applyPrefs(CONTEXT.table, data.columns);
-                }
-            } catch (err) { /* ignore */ }
-        });
+        // ---- live cross-tab sync -----------------------------------------
+        // Apply a freshly-fetched server state to this table: column layout
+        // (DOM) plus sort/filter (which need a data refresh — HTMX reload on
+        // the public page, navigation on the admin changelist).
+        function applyRemoteState(data) {
+            if (!data) return;
+            if (Array.isArray(data.columns)) {
+                try { localStorage.setItem(LS_KEY, JSON.stringify({ columns: data.columns })); } catch (e) { /* ignore */ }
+                applyPrefs(CONTEXT.table, data.columns);
+            }
+            var target = (CONTEXT.mode === "admin" ? data.admin_search : data.public_search) || "";
+            if (target === location.search) return;  // already in sync — avoids loops
+            if (CONTEXT.mode === "public" && window.htmx) {
+                var url = location.pathname + target;
+                window.htmx.ajax("GET", url, { target: "#tournament-table", swap: "innerHTML" });
+                history.replaceState({}, "", url);
+            } else {
+                // Admin changelist (no HTMX): reload with the new sort/filter URL.
+                window.location.replace(location.pathname + target);
+            }
+        }
 
-        // Robust live sync across windows AND browser profiles: when this
-        // window regains focus, pull the latest column layout from the server
-        // (the storage event only covers same-profile tabs). Cheap GET, only
-        // on focus, debounced.
         var lastResync = 0;
         function resyncFromServer() {
             var url = getSaveUrl();
             if (!isAuthenticated() || !url) return;
             var now = Date.now();
-            if (now - lastResync < 500) return;
+            if (now - lastResync < 400) return;  // debounce bursts
             lastResync = now;
             fetch(url, { credentials: "same-origin", headers: { "Accept": "application/json" } })
                 .then(function (r) { return r.json(); })
-                .then(function (data) {
-                    if (data && Array.isArray(data.columns)) {
-                        try { localStorage.setItem(LS_KEY, JSON.stringify({ columns: data.columns })); } catch (e) { /* ignore */ }
-                        applyPrefs(CONTEXT.table, data.columns);
-                    }
-                })
+                .then(applyRemoteState)
                 .catch(function () { /* best-effort */ });
         }
+
+        // Primary: BroadcastChannel ping from another tab after it saved.
+        if (bc) bc.onmessage = function () { resyncFromServer(); };
+        // Fallbacks: storage event (same-profile) and window focus (any case,
+        // incl. separate browser profiles where the above don't fire).
+        window.addEventListener("storage", function (e) {
+            if (e.key !== LS_KEY) return;
+            if (isAuthenticated()) {
+                resyncFromServer();
+            } else {
+                // Anonymous: no server — apply columns straight from localStorage.
+                try {
+                    var data = JSON.parse(e.newValue || "null");
+                    if (data && Array.isArray(data.columns)) applyPrefs(CONTEXT.table, data.columns);
+                } catch (err) { /* ignore */ }
+            }
+        });
         document.addEventListener("visibilitychange", function () {
             if (!document.hidden) resyncFromServer();
         });

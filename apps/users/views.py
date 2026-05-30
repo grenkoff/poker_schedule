@@ -11,7 +11,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext as _
 from apps.tournaments.columns import ALL_COLUMNS
-from apps.tournaments.table_state import parse_params
+from apps.tournaments.table_state import build_search, parse_params
 
 from .forms import TIMEZONE_SUGGESTIONS, ProfileForm
 
@@ -49,7 +49,17 @@ def save_table_prefs(request: HttpRequest) -> JsonResponse:
     other table, whose sort URL format differs.
     """
     if request.method == "GET":
-        return JsonResponse(request.user.table_pref_json or {})
+        prefs = request.user.table_pref_json or {}
+        # Include ready-to-use query strings per page so a re-syncing tab can
+        # reload its table with the right sort/filter URL without needing the
+        # public↔admin sort-format translation in JS.
+        return JsonResponse(
+            {
+                **prefs,
+                "public_search": build_search(prefs, "public"),
+                "admin_search": build_search(prefs, "admin"),
+            }
+        )
 
     try:
         payload = json.loads(request.body)
