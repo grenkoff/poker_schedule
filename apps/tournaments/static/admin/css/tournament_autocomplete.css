@@ -17,19 +17,22 @@
 }
 /* !important to beat Django admin's responsive.css, which shrinks #searchbar
    at narrow viewports. */
+/* !important on size too — Django's responsive.css shrinks the field height
+   at narrow viewports, which otherwise made the height change with width. */
 #changelist-search #searchbar {
     width: 100% !important;
     min-width: 0;
-    box-sizing: border-box;
-    height: 40px;
-    padding: 6px 34px 6px 12px;  /* right padding leaves room for the × button */
+    box-sizing: border-box !important;
+    height: 40px !important;
+    padding: 6px 34px 6px 12px !important;  /* right padding: room for the × */
     font-size: 0.95rem;
 }
 
 /* Match the Search button height to the taller input. */
 #changelist-search input[type="submit"] {
-    height: 40px;
-    padding: 0 16px;
+    height: 40px !important;
+    padding: 0 16px !important;
+    box-sizing: border-box;
 }
 
 .tnmt-ac-wrap {
