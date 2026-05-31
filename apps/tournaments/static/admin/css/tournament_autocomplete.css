@@ -1,8 +1,18 @@
 /* Typeahead dropdown for the tournament changelist search box. */
 
-/* Timezone picker injected into the "Starting time" column header. */
+/* Timezone picker injected into the "Starting time" column header — inline,
+   on the same line as the label. */
+#result_list thead th.column-starting_time_display .text {
+    white-space: nowrap;
+}
+#result_list thead th.column-starting_time_display .text > span {
+    display: inline-block;
+    vertical-align: middle;
+}
 #result_list thead th.column-starting_time_display select.tnmt-tz-picker {
-    margin-top: 4px;
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 6px;
     max-width: 150px;
     font-weight: 400;
     text-transform: none;

@@ -106,8 +106,9 @@
             localStorage.setItem(STORAGE_KEY, sel.value);
             applyCells(parseInt(sel.value, 10));
         });
-        th.appendChild(document.createElement("br"));
-        th.appendChild(sel);
+        // Inline, right after the "Starting time" label (same line).
+        var anchor = th.querySelector("a") || th.querySelector(".text") || th;
+        anchor.appendChild(sel);
     }
 
     function init() {
