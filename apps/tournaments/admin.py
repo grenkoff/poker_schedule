@@ -1,20 +1,12 @@
-import json
-
 from django.contrib import admin, messages
 from django.db import IntegrityError, transaction
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.html import escape
-from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
-from apps.filters.filters import TournamentFilter
 from apps.users.admin_mixins import StaffAdminMixin
 
-from .table_state import build_search
-
-from .columns import ALL_COLUMNS, Column
 from .forms import (
     BlindLevelTemplateInlineForm,
     BlindStructureInlineForm,
@@ -38,30 +30,6 @@ from .models import (
     template_id_for_signature,
 )
 from .recurrence import extend_series_to_horizon, regenerate_series
-
-
-def _wrap_label_words(label) -> str:
-    """`Starting time` → `Starting<br>time` so admin th wraps each word.
-
-    The lazy gettext proxy is resolved here at class-load time; project's
-    locale catalogs ship empty strings, so admin column headers stay in
-    English regardless of the active language — same as today.
-    """
-    # Safe: input is escape()'d first; only `<br>` is injected.
-    return mark_safe(escape(str(label)).replace(" ", "<br>"))  # noqa: S308
-
-
-def _make_display(column: Column):
-    """Wrap a column formatter as an admin display method."""
-
-    def _display(self, obj):
-        return column.formatter(obj)
-
-    _display.__name__ = f"col_{column.key}"
-    return admin.display(
-        description=_wrap_label_words(column.label),
-        ordering=column.db_field,
-    )(_display)
 
 
 class BlindStructureInline(admin.TabularInline):
@@ -144,56 +112,30 @@ class BlindStructureTemplateAdmin(StaffAdminMixin, admin.ModelAdmin):
             )
 
 
-def _make_tournament_changelist():
-    """Return a ChangeList that never treats GET params as ORM lookups.
-
-    Django admin's ChangeList passes every unrecognised GET param to
-    ``queryset.filter()``, which raises FieldError → IncorrectLookupParameters
-    → redirect to ``?e=1``.  We apply all filtering ourselves in
-    ``get_queryset`` (via TournamentFilter) and let the admin handle ordering
-    (``o``) and search (``q``) natively, so the changelist needs no lookup
-    params at all — returning an empty dict guarantees no ``?e=1`` bounce
-    regardless of what's in the URL.
-    """
-    from django.contrib.admin.views.main import ChangeList
-
-    class TournamentChangeList(ChangeList):
-        def get_filters_params(self, params=None):
-            return {}
-
-    return TournamentChangeList
-
-
 @admin.register(Tournament)
 class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     form = TournamentAdminForm
-    change_list_template = "admin/tournaments/tournament/change_list.html"
 
     class Media:
-        js = (
-            "js/table_prefs.js",
-            "admin/js/series_filter.js",
-            "js/localize_times.js",
-            "js/sticky_hscroll.js",
-            "js/sticky_thead.js",
-        )
-        css = {"all": ("admin/css/changelist_columns.css",)}
+        # Change-form helper: filters the series dropdown by selected room.
+        js = ("admin/js/series_filter.js",)
 
-    list_display = tuple(f"col_{c.key}" for c in ALL_COLUMNS)
-    list_select_related = ("room", "re_entry", "series")
-    # Default sort matches the public list (`apps/filters/sort.py::apply_sort`):
-    # starting_time ASC, cheap-first tiebreak. Django's ChangeList still
-    # appends `-pk` for stable pagination, which only matters when both
-    # primary keys above tie — rare in practice.
-    ordering = ("starting_time", "buy_in_total")
+    # Plain Django changelist: a few key columns, alphabetical by name.
+    list_display = (
+        "name",
+        "room",
+        "series",
+        "game_type",
+        "buy_in_total",
+        "starting_time",
+        "verified_by_admin",
+    )
+    list_select_related = ("room", "series")
+    ordering = ("name",)
     list_per_page = 100
-    list_filter = ()
     search_fields = ("name", "room__name")
     inlines = (BlindStructureInline,)
     actions = ("mark_verified", "unmark_verified")
-
-    def get_changelist(self, request, **kwargs):
-        return _make_tournament_changelist()
 
     fieldsets = (
         (None, {"fields": ("room", "series", "name", "game_type")}),
@@ -303,37 +245,6 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
             formfield.empty_label = "---------"
         return formfield
 
-    def changelist_view(self, request, extra_context=None):
-        extra_context = extra_context or {}
-
-        base_qs = super().get_queryset(request)
-        extra_context["filter_form"] = TournamentFilter(request.GET or None, queryset=base_qs)
-
-        prefs = {}
-        if request.user.is_authenticated:
-            prefs = request.user.table_pref_json or {}
-        extra_context["table_prefs_json"] = json.dumps(prefs)
-        extra_context["table_prefs_save_url"] = reverse("users:save_table_prefs")
-
-        # Explicit reset: clear saved sort/filter state, redirect to clean URL.
-        if "_reset" in request.GET and request.user.is_authenticated:
-            prefs["sort"] = None
-            prefs["filters"] = ""
-            request.user.table_pref_json = prefs
-            request.user.save(update_fields=["table_pref_json"])
-            return HttpResponseRedirect(request.path)
-
-        # Clean URL load — restore saved sort/filter state by redirecting to
-        # the admin-formatted URL (?o=… for sort, TournamentFilter params).
-        # `build_search` only ever emits valid params, so this can't loop.
-        _ignorable = {"e", "_reset", "_popup"}
-        if not (set(request.GET.keys()) - _ignorable) and request.user.is_authenticated:
-            target = build_search(prefs, "admin")
-            if target:
-                return HttpResponseRedirect(request.path + target)
-
-        return super().changelist_view(request, extra_context=extra_context)
-
     def get_queryset(self, request):
         self._extend_recurring_series()
         qs = super().get_queryset(request)
@@ -345,15 +256,10 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         # stay filtered out.
         from django.db.models import Q
 
-        qs = qs.filter(
+        return qs.filter(
             Q(periodicity__interval_seconds__gt=0, series_master__isnull=True)
             | Q(late_reg_at__gte=timezone.now())
         )
-        if request.GET:
-            filterset = TournamentFilter(request.GET, queryset=qs)
-            if filterset.is_valid():
-                qs = filterset.qs
-        return qs
 
     def _extend_recurring_series(self) -> None:
         masters = (
@@ -542,11 +448,6 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     def unmark_verified(self, request, queryset):
         updated = queryset.update(verified_by_admin=False)
         self.message_user(request, _("%d tournament(s) returned for editing.") % updated)
-
-
-# Synthesize one display method per column from the shared registry.
-for _col in ALL_COLUMNS:
-    setattr(TournamentAdmin, f"col_{_col.key}", _make_display(_col))
 
 
 # --- Option lookup tables -------------------------------------------------
