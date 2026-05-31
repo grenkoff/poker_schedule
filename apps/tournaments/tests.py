@@ -454,49 +454,65 @@ def test_regenerate_series_skips_disallowed_weekdays(pokerok):
     assert children.count() == expected
 
 
+def _tournament_post(pokerok, **overrides):
+    """Base POST dict for TournamentAdminForm. Defaults to a recurring
+    (daily, all-weekdays) submission with TIME-ONLY start/late-reg (no date,
+    as the recurring UI submits). Pass overrides to tweak."""
+    data = {
+        "room": str(pokerok.pk),
+        "series": str(_default_series(pokerok).pk),
+        "name": "T",
+        "game_type": GameType.NLHE,
+        "buy_in_without_rake": "10.00",
+        "rake": "1.00",
+        "guaranteed_dollars": "100",
+        "payout_percent": "15",
+        "starting_stack": "10000",
+        "starting_stack_bb": "50",
+        "timezone": "UTC",
+        "late_registration_available": "on",
+        "starting_time_1": "20:00",
+        "late_reg_at_1": "20:30",
+        "late_reg_level": "12",
+        "blind_interval_minutes": "10",
+        "break_minutes": "5",
+        "players_per_table": "9",
+        "players_at_final_table": "9",
+        "min_players": "2",
+        "max_players": "1000",
+        "re_entry": str(ReEntryOption.objects.get(name="unlimited").pk),
+        "bubble": str(BubbleOption.objects.get(name="finalized_when_registration_closes").pk),
+        "periodicity": str(Periodicity.objects.get(name="every_24_hours").pk),
+        "weekdays": ["0", "1", "2", "3", "4", "5", "6"],
+        "early_bird": "",
+        "early_bird_type": str(EarlyBirdType.objects.get(name="compensated_at_bubble").pk),
+        "featured_final_table": "",
+    }
+    data.update(overrides)
+    return data
+
+
 @pytest.mark.django_db
-def test_admin_form_rejects_starting_time_on_disallowed_weekday(pokerok):
+def test_admin_form_recurring_snaps_anchor_to_allowed_weekday(pokerok):
+    """Recurring: the date is irrelevant — the anchor auto-snaps to an
+    allowed LOCAL weekday at the typed time, with no validation error."""
     from apps.tournaments.forms import TournamentAdminForm
 
     daily = Periodicity.objects.get(name="every_24_hours")
-    # 2026-05-03 is a Sunday. Submitting the daily series with Sunday
-    # unchecked must fail validation on the `weekdays` field.
     form = TournamentAdminForm(
-        data={
-            "room": str(pokerok.pk),
-            "series": str(_default_series(pokerok).pk),
-            "name": "Sunday Daily",
-            "game_type": GameType.NLHE,
-            "buy_in_without_rake": "10.00",
-            "rake": "1.00",
-            "guaranteed_dollars": "100",
-            "payout_percent": "15",
-            "starting_stack": "10000",
-            "starting_stack_bb": "50",
-            "timezone": "UTC",
-            "late_registration_available": "on",
-            "starting_time_0": "03.05.2026",
-            "starting_time_1": "20:00",
-            "late_reg_at_0": "03.05.2026",
-            "late_reg_at_1": "20:30",
-            "late_reg_level": "12",
-            "blind_interval_minutes": "10",
-            "break_minutes": "5",
-            "players_per_table": "9",
-            "players_at_final_table": "9",
-            "min_players": "2",
-            "max_players": "1000",
-            "re_entry": str(ReEntryOption.objects.get(name="unlimited").pk),
-            "bubble": str(BubbleOption.objects.get(name="finalized_when_registration_closes").pk),
-            "periodicity": str(daily.pk),
-            "weekdays": ["0", "1", "2", "3", "4", "5"],  # Sunday unchecked
-            "early_bird": "",
-            "early_bird_type": str(EarlyBirdType.objects.get(name="compensated_at_bubble").pk),
-            "featured_final_table": "",
-        }
+        data=_tournament_post(
+            pokerok,
+            periodicity=str(daily.pk),
+            weekdays=["0", "1", "2", "3", "4", "5"],  # Sunday unchecked
+            starting_time_1="20:00",
+        )
     )
-    assert not form.is_valid()
-    assert "weekdays" in form.errors
+    assert form.is_valid(), form.errors
+    saved = form.save()
+    # tz=UTC, so local weekday == UTC weekday; must be an allowed (non-Sunday) day.
+    assert saved.starting_time.weekday() in {0, 1, 2, 3, 4, 5}
+    assert saved.starting_time.hour == 20
+    assert saved.weekdays == 0b0111111  # stored as-checked (Mon..Sat)
 
 
 @pytest.mark.django_db
@@ -594,6 +610,99 @@ def test_one_off_ignores_weekdays_mask(pokerok):
     master = _make_tournament(pokerok, weekdays=0b0000001)  # Monday only
     regenerate_series(master)
     assert Tournament.objects.filter(series_master=master).count() == 0
+
+
+@pytest.mark.django_db
+def test_admin_form_recurring_astana_monday_stored_as_utc_sunday(pokerok):
+    """User scenario: UTC+5 (Almaty), 01:00, Mondays → stored UTC instant is
+    Sunday 20:00; round-trips back to Monday 01:00 in Almaty."""
+    from zoneinfo import ZoneInfo
+
+    from apps.tournaments.forms import TournamentAdminForm
+
+    weekly = Periodicity.objects.get(name="weekly")
+    form = TournamentAdminForm(
+        data=_tournament_post(
+            pokerok,
+            timezone="Asia/Almaty",  # UTC+5, no DST
+            periodicity=str(weekly.pk),
+            weekdays=["0"],  # Monday (local)
+            starting_time_1="01:00",
+            late_reg_at_1="04:00",
+        )
+    )
+    assert form.is_valid(), form.errors
+    saved = form.save()
+
+    utc = saved.starting_time.astimezone(ZoneInfo("UTC"))
+    assert (utc.hour, utc.minute) == (20, 0)
+    assert utc.weekday() == 6  # Sunday in UTC
+
+    local = saved.starting_time.astimezone(ZoneInfo("Asia/Almaty"))
+    assert (local.hour, local.minute) == (1, 0)
+    assert local.weekday() == 0  # Monday locally
+    late_local = saved.late_reg_at.astimezone(ZoneInfo("Asia/Almaty"))
+    assert (late_local.hour, late_local.weekday()) == (4, 0)
+    assert saved.weekdays == 0b0000001  # Monday, stored in local frame
+
+
+@pytest.mark.django_db
+def test_admin_form_recurring_late_reg_wraps_to_next_day(pokerok):
+    """Late-reg time ≤ start time means it closes the next day."""
+    from apps.tournaments.forms import TournamentAdminForm
+
+    form = TournamentAdminForm(
+        data=_tournament_post(
+            pokerok,
+            starting_time_1="23:00",
+            late_reg_at_1="00:30",  # earlier clock time → next day
+        )
+    )
+    assert form.is_valid(), form.errors
+    saved = form.save()
+    assert saved.late_reg_at - saved.starting_time == timedelta(minutes=90)
+
+
+@pytest.mark.django_db
+def test_regenerate_weekly_multiple_weekdays(pokerok):
+    """Weekly periodicity with Mon+Thu yields BOTH weekdays (daily stepping
+    under the hood), not just one."""
+    weekly = Periodicity.objects.get(name="weekly")
+    master = _make_tournament(
+        pokerok,
+        periodicity=weekly,
+        weekdays=0b0001001,  # Mon (0) + Thu (3)
+        starting_time=datetime(2026, 5, 4, 12, 0, tzinfo=UTC),  # Monday
+        late_reg_at=datetime(2026, 5, 4, 13, 0, tzinfo=UTC),
+    )
+    regenerate_series(master)
+    weekdays = {c.starting_time.weekday() for c in Tournament.objects.filter(series_master=master)}
+    assert weekdays == {0, 3}
+
+
+@pytest.mark.django_db
+def test_regenerate_subdaily_on_local_weekdays(pokerok):
+    """Sub-daily (every 4h) restricted to Mondays: children only on the
+    tournament's LOCAL Mondays, repeating through the day."""
+    from zoneinfo import ZoneInfo
+
+    every4 = Periodicity.objects.get(name="every_4_hours")
+    almaty = ZoneInfo("Asia/Almaty")
+    master = _make_tournament(
+        pokerok,
+        timezone="Asia/Almaty",
+        periodicity=every4,
+        weekdays=0b0000001,  # Monday (local)
+        starting_time=datetime(2026, 5, 3, 19, 0, tzinfo=UTC),  # = Mon 00:00 Almaty
+        late_reg_at=datetime(2026, 5, 3, 19, 30, tzinfo=UTC),
+    )
+    regenerate_series(master)
+    children = list(Tournament.objects.filter(series_master=master))
+    assert children, "expected sub-daily children"
+    # Every child falls on a local Monday.
+    assert all(c.starting_time.astimezone(almaty).weekday() == 0 for c in children)
+    # And there's more than one per Monday (sub-daily repetition).
+    assert len(children) >= 5
 
 
 # --- tournament series ----------------------------------------------------

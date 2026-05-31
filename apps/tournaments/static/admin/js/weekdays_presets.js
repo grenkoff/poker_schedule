@@ -43,6 +43,9 @@
 
         function applyState() {
             var on = isRecurring();
+            // Weekdays are meaningless for one-off tournaments — hide the whole
+            // row rather than just greying it out.
+            row.style.display = on ? "" : "none";
             boxes.forEach(function (box) { box.disabled = !on; });
             presetLinks.forEach(function (a) {
                 if (on) {

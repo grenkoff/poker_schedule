@@ -1,15 +1,20 @@
+import json
+from datetime import timedelta
+from zoneinfo import ZoneInfo
+
 from django.contrib import admin, messages
 from django.db import IntegrityError, transaction
-from django.http import HttpResponseRedirect
-from django.urls import reverse
+from django.db.models import Q
+from django.http import HttpResponseRedirect, JsonResponse
+from django.urls import path, reverse
 from django.utils import timezone
-from django.utils.html import escape
-from django.utils.safestring import mark_safe
+from django.utils.formats import date_format
+from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
 from apps.users.admin_mixins import StaffAdminMixin
 
-from .columns import ALL_COLUMNS, Column
+from .columns import _fmt_decimal, _with_unit
 from .forms import (
     BlindLevelTemplateInlineForm,
     BlindStructureInlineForm,
@@ -33,30 +38,6 @@ from .models import (
     template_id_for_signature,
 )
 from .recurrence import extend_series_to_horizon, regenerate_series
-
-
-def _wrap_label_words(label) -> str:
-    """`Starting time` → `Starting<br>time` so admin th wraps each word.
-
-    The lazy gettext proxy is resolved here at class-load time; project's
-    locale catalogs ship empty strings, so admin column headers stay in
-    English regardless of the active language — same as today.
-    """
-    # Safe: input is escape()'d first; only `<br>` is injected.
-    return mark_safe(escape(str(label)).replace(" ", "<br>"))  # noqa: S308
-
-
-def _make_display(column: Column):
-    """Wrap a column formatter as an admin display method."""
-
-    def _display(self, obj):
-        return column.formatter(obj)
-
-    _display.__name__ = f"col_{column.key}"
-    return admin.display(
-        description=_wrap_label_words(column.label),
-        ordering=column.db_field,
-    )(_display)
 
 
 class BlindStructureInline(admin.TabularInline):
@@ -145,26 +126,137 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
 
     class Media:
         js = (
-            "admin/js/changelist_columns.js",
+            # Change-form helper: filters the series dropdown by selected room.
             "admin/js/series_filter.js",
-            "js/localize_times.js",
-            "js/sticky_hscroll.js",
-            "js/sticky_thead.js",
+            # Changelist: typeahead dropdown on the search box.
+            "admin/js/tournament_autocomplete.js",
+            # Changelist: timezone picker in the Starting time column header.
+            "admin/js/starting_time_tz.js",
         )
-        css = {"all": ("admin/css/changelist_columns.css",)}
+        css = {"all": ("admin/css/tournament_autocomplete.css",)}
 
-    list_display = tuple(f"col_{c.key}" for c in ALL_COLUMNS)
-    list_select_related = ("room", "re_entry", "series")
-    # Default sort matches the public list (`apps/filters/sort.py::apply_sort`):
-    # starting_time ASC, cheap-first tiebreak. Django's ChangeList still
-    # appends `-pk` for stable pagination, which only matters when both
-    # primary keys above tie — rare in practice.
-    ordering = ("starting_time", "buy_in_total")
+    # Plain Django changelist: a few key columns, alphabetical by name.
+    list_display = (
+        "name",
+        "room",
+        "series_name",
+        "game_type",
+        "buy_in_display",
+        "starting_time_display",
+        "periodicity",
+        "weekdays_display",
+        "verified_by_admin",
+    )
+    list_select_related = ("room", "series", "periodicity")
+    ordering = ("name",)
+    sortable_by = ("name",)  # only Name is sortable; all other headers are plain
+
+    _WEEKDAY_ABBR = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+    @admin.display(description=_("Active weekdays"))
+    def weekdays_display(self, obj):
+        # `weekdays` is a 7-bit mask (bit i == weekday, Mon=0 … Sun=6); it's
+        # ignored for one-off tournaments.
+        if obj.periodicity_id and obj.periodicity.interval_seconds == 0:
+            return "—"
+        mask = obj.weekdays or 0
+        if mask == 0b1111111:
+            return _("All")
+        days = [self._WEEKDAY_ABBR[i] for i in range(7) if mask & (1 << i)]
+        return ", ".join(str(d) for d in days) if days else "—"
+
+    @admin.display(description=_("Tournament series"), ordering="series__name")
+    def series_name(self, obj):
+        # Drop the "Room — " prefix from TournamentSeries.__str__; the Room
+        # column already shows it.
+        return obj.series.name if obj.series_id else "—"
+
+    @admin.display(description=_("Buy-in (with rake), $"), ordering="buy_in_total")
+    def buy_in_display(self, obj):
+        # Same formatting as the public list: "$1", "$1.88" (no trailing .00).
+        return _with_unit(_fmt_decimal(obj.buy_in_total), prefix="$")
+
+    @admin.display(description=_("Starting time"), ordering="starting_time")
+    def starting_time_display(self, obj):
+        """One-off → full date+time. Recurring → just the local time(s) of
+        day (a list for sub-daily), since the date is irrelevant for a
+        repeating schedule.
+
+        Emits the underlying UTC instant(s) as data attributes so the column
+        header's timezone picker (starting_time_tz.js) can recompute the
+        displayed time(s) in any offset; the server-rendered text (in the
+        tournament's own timezone) is the no-JS fallback.
+        """
+        interval = obj.periodicity.interval_seconds if obj.periodicity_id else 0
+        try:
+            tz = ZoneInfo(obj.timezone or "UTC")
+        except Exception:
+            tz = ZoneInfo("UTC")
+
+        if interval == 0:
+            instants = [obj.starting_time]
+            kind = "datetime"
+            fallback = date_format(timezone.localtime(obj.starting_time), "DATETIME_FORMAT")
+        elif interval >= 86400:  # daily / weekly → one time per day
+            instants = [obj.starting_time]
+            kind = "time"
+            fallback = obj.starting_time.astimezone(tz).strftime("%H:%M")
+        else:  # sub-daily → every start time within a 24h day
+            step = timedelta(seconds=interval)
+            n = max(1, 86400 // interval)
+            instants = [obj.starting_time + step * i for i in range(n)]
+            local_start = obj.starting_time.astimezone(tz)
+            fallback = ", ".join(
+                sorted({(local_start + step * i).strftime("%H:%M") for i in range(n)})
+            )
+            kind = "time"
+
+        iso = json.dumps([dt.isoformat() for dt in instants])
+        return format_html(
+            '<span data-tz-times="{}" data-tz-kind="{}">{}</span>', iso, kind, fallback
+        )
+
     list_per_page = 100
-    list_filter = ()
     search_fields = ("name", "room__name")
     inlines = (BlindStructureInline,)
     actions = ("mark_verified", "unmark_verified")
+
+    def get_urls(self):
+        # Custom URLs must precede the catch-all `<object_id>/` admin route.
+        return [
+            path(
+                "autocomplete-json/",
+                self.admin_site.admin_view(self.autocomplete_json),
+                name="tournaments_tournament_autocomplete_json",
+            ),
+            *super().get_urls(),
+        ]
+
+    def autocomplete_json(self, request):
+        """Typeahead results for the changelist search box.
+
+        Scoped to the same rows the changelist shows (series masters + open
+        one-offs), so every suggestion opens an editable change page.
+        """
+        q = (request.GET.get("q") or "").strip()
+        results = []
+        if q:
+            qs = (
+                Tournament.objects.filter(series_master__isnull=True)
+                .filter(Q(periodicity__interval_seconds__gt=0) | Q(late_reg_at__gte=timezone.now()))
+                .filter(Q(name__icontains=q) | Q(room__name__icontains=q))
+                .select_related("room")
+                .order_by("name")[:10]
+            )
+            for t in qs:
+                results.append(
+                    {
+                        "name": t.name,
+                        "room": t.room.name if t.room_id else "",
+                        "url": reverse("admin:tournaments_tournament_change", args=[t.pk]),
+                    }
+                )
+        return JsonResponse({"results": results})
 
     fieldsets = (
         (None, {"fields": ("room", "series", "name", "game_type")}),
@@ -183,15 +275,22 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         (
             _("Time"),
             {
+                # Recurrence (periodicity + weekdays) lives here now: for a
+                # recurring tournament only the time-of-day + weekdays matter,
+                # not an absolute date. `periodicity` is first because it gates
+                # whether the date inputs and weekday checkboxes are shown.
                 "fields": (
                     "timezone",
+                    "periodicity",
                     "starting_time",
+                    "weekdays",
                     "late_registration_available",
                     "late_reg_at",
                     "late_registration_duration",
                     "late_reg_level",
                     "blind_interval_minutes",
                     "break_minutes",
+                    "series_master",
                 ),
             },
         ),
@@ -202,10 +301,6 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         (
             _("Field"),
             {"fields": ("min_players", "max_players", "re_entry", "bubble")},
-        ),
-        (
-            _("Recurrence"),
-            {"fields": ("periodicity", "weekdays", "series_master")},
         ),
         (
             _("Features"),
@@ -277,17 +372,15 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     def get_queryset(self, request):
         self._extend_recurring_series()
         qs = super().get_queryset(request)
-        # Hide expired tournaments, but keep RECURRING SERIES MASTERS
-        # visible regardless of their original starting_time. Otherwise
-        # child rows show a broken `series_master` link — the master
-        # still sits in DB but `get_object` uses this same queryset and
-        # returns 404. One-off tournaments past their late-reg window
-        # stay filtered out.
         from django.db.models import Q
 
-        return qs.filter(
-            Q(periodicity__interval_seconds__gt=0, series_master__isnull=True)
-            | Q(late_reg_at__gte=timezone.now())
+        # Show only "source" rows: recurring-series MASTERS (any date, so the
+        # series stays editable) and one-off tournaments with open late-reg.
+        # Auto-generated series children (`series_master` set) are excluded so
+        # the list isn't flooded with one row per occurrence — they're managed
+        # via their master and still appear in full on the public page.
+        return qs.filter(series_master__isnull=True).filter(
+            Q(periodicity__interval_seconds__gt=0) | Q(late_reg_at__gte=timezone.now())
         )
 
     def _extend_recurring_series(self) -> None:
@@ -477,11 +570,6 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     def unmark_verified(self, request, queryset):
         updated = queryset.update(verified_by_admin=False)
         self.message_user(request, _("%d tournament(s) returned for editing.") % updated)
-
-
-# Synthesize one display method per column from the shared registry.
-for _col in ALL_COLUMNS:
-    setattr(TournamentAdmin, f"col_{_col.key}", _make_display(_col))
 
 
 # --- Option lookup tables -------------------------------------------------

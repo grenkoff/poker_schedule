@@ -1,0 +1,137 @@
+/* Typeahead dropdown for the tournament changelist search box. */
+
+/* Timezone picker injected into the "Starting time" column header — inline,
+   on the same line as the label. */
+#result_list thead th.column-starting_time_display .text {
+    white-space: nowrap;
+}
+#result_list thead th.column-starting_time_display .text > span {
+    display: inline-block;
+    vertical-align: middle;
+}
+#result_list thead th.column-starting_time_display select.tnmt-tz-picker {
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 6px;
+    max-width: 150px;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: 0.75rem;
+    padding: 2px 4px;
+}
+
+/* Full-width search input: lay out icon + input + button as a flex row that
+   spans the whole content column, and let the input grow — so the box doesn't
+   collapse to a sliver on narrow viewports. */
+#changelist-search > div {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    max-width: none !important;  /* Django admin caps this at 480px */
+    box-sizing: border-box;
+}
+#changelist-search .tnmt-ac-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+/* !important to beat Django admin's responsive.css, which shrinks #searchbar
+   at narrow viewports. */
+/* !important on size too — Django's responsive.css shrinks the field height
+   at narrow viewports, which otherwise made the height change with width. */
+#changelist-search #searchbar {
+    width: 100% !important;
+    min-width: 0;
+    box-sizing: border-box !important;
+    height: 35px !important;
+    padding: 4px 34px 4px 12px !important;  /* right padding: room for the × */
+    font-size: 0.95rem;
+}
+
+/* Match the Search button height to the taller input. */
+#changelist-search input[type="submit"] {
+    height: 35px !important;
+    padding: 0 16px !important;
+    box-sizing: border-box;
+}
+
+.tnmt-ac-wrap {
+    position: relative;
+    display: inline-block;
+}
+
+/* Clear (×) button inside the input. */
+.tnmt-ac-clear {
+    position: absolute;
+    top: 50%;
+    right: 8px;
+    transform: translateY(-50%);
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--body-quiet-color, #888);
+    font-size: 20px;
+    line-height: 20px;
+    text-align: center;
+    cursor: pointer;
+}
+.tnmt-ac-clear:hover {
+    background: var(--darkened-bg, #f0f0f0);
+    color: var(--body-fg, #333);
+}
+
+.tnmt-ac-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    /* !important: Django admin's `ul` rules add margin-left/padding-left,
+       which would shift the dropdown right of the input's left edge. */
+    margin: 2px 0 0 !important;
+    padding: 0 !important;
+    list-style: none;
+    background: var(--body-bg, #fff);
+    border: 1px solid var(--border-color, #ccc);
+    border-radius: 4px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.tnmt-ac-item {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 12px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    border-bottom: 1px solid var(--hairline-color, #eee);
+}
+
+.tnmt-ac-item:last-child {
+    border-bottom: none;
+}
+
+.tnmt-ac-item.tnmt-ac-active {
+    background: var(--selected-row, #e8f0fe);
+}
+
+.tnmt-ac-name {
+    color: var(--link-fg, #417690);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tnmt-ac-room {
+    color: var(--body-quiet-color, #888);
+    flex-shrink: 0;
+    font-size: 0.8rem;
+}

@@ -19,6 +19,7 @@ when the master is not re-saved.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from django.db import transaction
 from django.db.models import Max
@@ -28,10 +29,33 @@ from django.utils import timezone
 # normal data) — production rows always pull from `room.horizon_days`.
 HORIZON_DAYS = 30
 
+# Anything at or above this interval is treated as "≥ daily": we step one
+# day at a time and let the weekday mask decide which days produce an
+# occurrence (so e.g. weekly with Mon+Thu yields BOTH Mondays and
+# Thursdays, not just one weekday).
+_DAILY_SECONDS = 86400
+
 
 def _horizon_for(master) -> int:
     room = getattr(master, "room", None)
     return getattr(room, "horizon_days", None) or HORIZON_DAYS
+
+
+def _tz_for(master) -> ZoneInfo:
+    """The tournament's own timezone (the frame the weekday mask lives in)."""
+    try:
+        return ZoneInfo(master.timezone or "UTC")
+    except Exception:
+        return ZoneInfo("UTC")
+
+
+def _step_for(interval_seconds: int) -> timedelta:
+    """Iteration step. For ≥ daily intervals we step one day so each
+    selected local weekday gets its own occurrence; for sub-daily we step
+    by the true interval (the start time is a within-day phase anchor)."""
+    if interval_seconds >= _DAILY_SECONDS:
+        return timedelta(days=1)
+    return timedelta(seconds=interval_seconds)
 
 
 def _allowed_weekdays(mask: int) -> set[int]:
@@ -104,19 +128,20 @@ def regenerate_series(master) -> None:
     if not interval:
         return
 
-    delta = timedelta(seconds=interval)
+    step = _step_for(interval)
+    tz = _tz_for(master)
     horizon = master.starting_time + timedelta(days=_horizon_for(master))
     late_reg_offset = master.late_reg_at - master.starting_time
     blind_levels = list(master.blind_levels.all())
     allowed = _allowed_weekdays(master.weekdays)
 
-    next_start = master.starting_time + delta
+    next_start = master.starting_time + step
     while next_start <= horizon:
-        if next_start.weekday() in allowed:
+        if next_start.astimezone(tz).weekday() in allowed:
             child = _build_child(master, next_start, late_reg_offset)
             child.save()
             _copy_blind_levels(child, blind_levels)
-        next_start += delta
+        next_start += step
 
 
 @transaction.atomic
@@ -136,7 +161,8 @@ def extend_series_to_horizon(master, *, now: datetime | None = None) -> int:
         return 0
 
     now = now or timezone.now()
-    delta = timedelta(seconds=interval)
+    step = _step_for(interval)
+    tz = _tz_for(master)
     horizon = now + timedelta(days=_horizon_for(master))
 
     # If the room's horizon was shrunk (e.g. 30 → 7), drop any FUTURE
@@ -152,19 +178,19 @@ def extend_series_to_horizon(master, *, now: datetime | None = None) -> int:
         last=Max("starting_time")
     )["last"]
     base = last_child_start or master.starting_time
-    next_start = base + delta
+    next_start = base + step
 
     if next_start > horizon:
         return 0
 
     # Fast-forward when the base is far in the past so we don't create
     # thousands of guaranteed-closed occurrences. Land on the first
-    # occurrence at or after `now - delta` (one slot of slack so we
+    # occurrence at or after `now - step` (one slot of slack so we
     # don't skip an in-progress tournament).
-    if next_start < now - delta:
-        gap = now - delta - next_start
-        skip = gap.total_seconds() // delta.total_seconds()
-        next_start = next_start + delta * int(skip)
+    if next_start < now - step:
+        gap = now - step - next_start
+        skip = gap.total_seconds() // step.total_seconds()
+        next_start = next_start + step * int(skip)
 
     late_reg_offset = master.late_reg_at - master.starting_time
     blind_levels = list(master.blind_levels.all())
@@ -172,10 +198,10 @@ def extend_series_to_horizon(master, *, now: datetime | None = None) -> int:
 
     created = 0
     while next_start <= horizon:
-        if next_start.weekday() in allowed:
+        if next_start.astimezone(tz).weekday() in allowed:
             child = _build_child(master, next_start, late_reg_offset)
             child.save()
             _copy_blind_levels(child, blind_levels)
             created += 1
-        next_start += delta
+        next_start += step
     return created

@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import json
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext as _
 
+from apps.tournaments.columns import ALL_COLUMNS
+from apps.tournaments.table_state import build_search, parse_params
+
 from .forms import TIMEZONE_SUGGESTIONS, ProfileForm
+from .models import User
 
 
 @login_required
@@ -28,3 +34,57 @@ def profile(request: HttpRequest) -> HttpResponse:
         "users/profile.html",
         {"form": form, "timezone_suggestions": TIMEZONE_SUGGESTIONS},
     )
+
+
+@login_required
+def save_table_prefs(request: HttpRequest) -> JsonResponse:
+    """GET/POST /profile/table-prefs/ — read or persist the table prefs.
+
+    GET returns the stored ``{columns, sort, filters}`` so an open tab can
+    re-sync from the server on focus (works even across browser profiles,
+    where localStorage isn't shared).
+
+    POST persists column order/visibility plus the page's sort/filter state.
+    The client sends ``{columns, params, mode}`` where ``params`` is the page's
+    raw query string and ``mode`` is ``"public"`` or ``"admin"``. Sort/filter
+    state is stored semantically (by column key) so it can be replayed on the
+    other table, whose sort URL format differs.
+    """
+    user = request.user
+    assert isinstance(user, User)  # @login_required guarantees an authenticated user
+
+    if request.method == "GET":
+        prefs = user.table_pref_json or {}
+        # Include ready-to-use query strings per page so a re-syncing tab can
+        # reload its table with the right sort/filter URL without needing the
+        # public↔admin sort-format translation in JS.
+        return JsonResponse(
+            {
+                **prefs,
+                "public_search": build_search(prefs, "public"),
+                "admin_search": build_search(prefs, "admin"),
+            }
+        )
+
+    try:
+        payload = json.loads(request.body)
+    except (ValueError, TypeError):
+        return JsonResponse({"ok": False, "error": "invalid JSON"}, status=400)
+
+    columns = payload.get("columns", [])
+    if not user.is_staff:
+        admin_only_keys = {c.key for c in ALL_COLUMNS if c.admin_only}
+        columns = [c for c in columns if c.get("key") not in admin_only_keys]
+    valid_keys = {c.key for c in ALL_COLUMNS}
+    columns = [c for c in columns if isinstance(c, dict) and c.get("key") in valid_keys]
+
+    mode = "admin" if payload.get("mode") == "admin" else "public"
+    sort, filters = parse_params(str(payload.get("params", "")), mode)
+
+    user.table_pref_json = {
+        "columns": columns,
+        "sort": sort,
+        "filters": filters,
+    }
+    user.save(update_fields=["table_pref_json"])
+    return JsonResponse({"ok": True})

@@ -1,8 +1,10 @@
 """Public-facing views over Tournament."""
 
+import json
+
 from django.core.paginator import Paginator
 from django.db.models import Q
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.shortcuts import render
 from django.utils import timezone
 
@@ -17,6 +19,7 @@ from apps.filters.sort import (
 
 from .columns import PUBLIC_COLUMNS
 from .models import Tournament
+from .table_state import build_search
 
 PAGE_SIZE = 50
 
@@ -28,6 +31,26 @@ def tournament_list(request: HttpRequest) -> HttpResponse:
     table partial so the filter form above it is preserved — full-page
     loads stay as the SEO-friendly canonical response.
     """
+    is_htmx = request.headers.get("HX-Request") == "true"
+    # Params that don't count as "user has navigated to a specific view".
+    _ignorable = {"e", "_reset"}
+
+    if "_reset" in request.GET and request.user.is_authenticated:
+        # Explicit reset: clear saved sort/filter state.
+        prefs = request.user.table_pref_json or {}
+        prefs["sort"] = None
+        prefs["filters"] = ""
+        request.user.table_pref_json = prefs
+        request.user.save(update_fields=["table_pref_json"])
+    elif (
+        not is_htmx and request.user.is_authenticated and not (set(request.GET.keys()) - _ignorable)
+    ):
+        # Clean URL load — restore the user's saved sort/filter state by
+        # redirecting to the public-formatted URL.
+        target = build_search(request.user.table_pref_json or {}, "public")
+        if target:
+            return HttpResponseRedirect(request.path + target)
+
     # Show tournaments while late registration is still open — matches
     # what `prune_expired.js` removes client-side and what `TournamentAdmin`
     # filters on, so users don't see a row vanish before late-reg closes.
@@ -48,6 +71,10 @@ def tournament_list(request: HttpRequest) -> HttpResponse:
     current_key, current_desc = parse_sort(sort_value)
     sort_links = {key: toggle_value(sort_value, key) for key in SORT_FIELDS}
 
+    prefs = {}
+    if request.user.is_authenticated:
+        prefs = request.user.table_pref_json or {}
+
     context = {
         "filterset": filterset,
         "page_obj": page,
@@ -58,9 +85,9 @@ def tournament_list(request: HttpRequest) -> HttpResponse:
         "has_filters_applied": bool(request.GET.dict()),
         "columns": PUBLIC_COLUMNS,
         "search_query": q,
+        "table_prefs_json": json.dumps(prefs),
     }
 
-    is_htmx = request.headers.get("HX-Request") == "true"
     template = (
         "tournaments/_tournament_table.html" if is_htmx else "tournaments/tournament_list.html"
     )

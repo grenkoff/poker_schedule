@@ -73,6 +73,12 @@ class User(AbstractUser):
         choices=LANGUAGE_CHOICES,
         default="en",
     )
+    table_pref_json = models.JSONField(
+        _("table preferences"),
+        default=dict,
+        blank=True,
+        help_text=_("Column order/visibility, sort and filter state for the tournament table."),
+    )
 
     objects = UserManager()  # type: ignore[misc]
 

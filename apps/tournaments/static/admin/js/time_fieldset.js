@@ -51,6 +51,46 @@
         return isNaN(d.getTime()) ? null : d;
     }
 
+    function parseHhmm(s) {
+        const m = /^(\d{1,2}):(\d{2})$/.exec((s || "").trim());
+        if (!m) return null;
+        return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);  // minutes since midnight
+    }
+
+    /* --- recurrence mode (date hidden for recurring tournaments) -------- */
+
+    function isRecurringMode() {
+        const sel = document.querySelector('select[data-tnmt-periodicity="1"]');
+        if (!sel) return false;
+        const opt = sel.options[sel.selectedIndex];
+        if (!opt) return false;
+        const raw = opt.getAttribute("data-interval-seconds");
+        return raw !== null && raw !== "" && parseInt(raw, 10) > 0;
+    }
+
+    /** For a recurring tournament only the time-of-day matters, so hide and
+     *  disable the DATE inputs (disabled => not submitted; the server
+     *  synthesizes the anchor date). One-off shows them as before. */
+    function applyRecurrenceMode() {
+        const rec = isRecurringMode();
+        [["starting_time_0", false], ["late_reg_at_0", true]].forEach(function (pair) {
+            const name = pair[0], isLate = pair[1];
+            const dateInput = $('input.tnmt-date-trigger[name="' + name + '"]');
+            if (!dateInput) return;
+            const span = shortcutsAfter(dateInput);
+            dateInput.style.display = rec ? "none" : "";
+            if (span) span.style.display = rec ? "none" : "";
+            dateInput.disabled = rec || (isLate && !isLateAvailable());
+        });
+        recomputeDuration();
+    }
+
+    function bindRecurrenceMode() {
+        const sel = document.querySelector('select[data-tnmt-periodicity="1"]');
+        if (sel) sel.addEventListener("change", applyRecurrenceMode);
+        applyRecurrenceMode();
+    }
+
     function sameYMD(a, b) {
         return a.getFullYear() === b.getFullYear()
             && a.getMonth() === b.getMonth()
@@ -497,6 +537,19 @@
             f.duration.value = "";
             return;
         }
+        if (isRecurringMode()) {
+            // Date is hidden — derive from the two times; late ≤ start ⇒ next day.
+            const st = parseHhmm(f.startTime && f.startTime.value);
+            const lt = parseHhmm(f.lateTime && f.lateTime.value);
+            if (st == null || lt == null) {
+                f.duration.value = "";
+                return;
+            }
+            let diffMin = lt - st;
+            if (diffMin <= 0) diffMin += 24 * 60;
+            f.duration.value = formatDuration(diffMin);
+            return;
+        }
         const start = parseDdmmyyyyHhmm(f.startDate && f.startDate.value, f.startTime && f.startTime.value);
         const late = parseDdmmyyyyHhmm(f.lateDate && f.lateDate.value, f.lateTime && f.lateTime.value);
         if (!start || !late) {
@@ -735,6 +788,7 @@
         applyDefaults();
         gateLateRegTime();
         bindLateRegAvailableToggle();
+        bindRecurrenceMode();
         bindDurationRecalc();
         bindStartChangeSnaps();
         recomputeDuration();
