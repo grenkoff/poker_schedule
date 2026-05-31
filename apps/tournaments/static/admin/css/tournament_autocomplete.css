@@ -23,14 +23,14 @@
     width: 100% !important;
     min-width: 0;
     box-sizing: border-box !important;
-    height: 40px !important;
-    padding: 6px 34px 6px 12px !important;  /* right padding: room for the × */
+    height: 35px !important;
+    padding: 4px 34px 4px 12px !important;  /* right padding: room for the × */
     font-size: 0.95rem;
 }
 
 /* Match the Search button height to the taller input. */
 #changelist-search input[type="submit"] {
-    height: 40px !important;
+    height: 35px !important;
     padding: 0 16px !important;
     box-sizing: border-box;
 }
