@@ -10,10 +10,12 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext as _
+
 from apps.tournaments.columns import ALL_COLUMNS
 from apps.tournaments.table_state import build_search, parse_params
 
 from .forms import TIMEZONE_SUGGESTIONS, ProfileForm
+from .models import User
 
 
 @login_required
@@ -48,8 +50,11 @@ def save_table_prefs(request: HttpRequest) -> JsonResponse:
     state is stored semantically (by column key) so it can be replayed on the
     other table, whose sort URL format differs.
     """
+    user = request.user
+    assert isinstance(user, User)  # @login_required guarantees an authenticated user
+
     if request.method == "GET":
-        prefs = request.user.table_pref_json or {}
+        prefs = user.table_pref_json or {}
         # Include ready-to-use query strings per page so a re-syncing tab can
         # reload its table with the right sort/filter URL without needing the
         # public↔admin sort-format translation in JS.
@@ -67,7 +72,7 @@ def save_table_prefs(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"ok": False, "error": "invalid JSON"}, status=400)
 
     columns = payload.get("columns", [])
-    if not request.user.is_staff:
+    if not user.is_staff:
         admin_only_keys = {c.key for c in ALL_COLUMNS if c.admin_only}
         columns = [c for c in columns if c.get("key") not in admin_only_keys]
     valid_keys = {c.key for c in ALL_COLUMNS}
@@ -76,10 +81,10 @@ def save_table_prefs(request: HttpRequest) -> JsonResponse:
     mode = "admin" if payload.get("mode") == "admin" else "public"
     sort, filters = parse_params(str(payload.get("params", "")), mode)
 
-    request.user.table_pref_json = {
+    user.table_pref_json = {
         "columns": columns,
         "sort": sort,
         "filters": filters,
     }
-    request.user.save(update_fields=["table_pref_json"])
+    user.save(update_fields=["table_pref_json"])
     return JsonResponse({"ok": True})

@@ -676,10 +676,7 @@ def test_regenerate_weekly_multiple_weekdays(pokerok):
         late_reg_at=datetime(2026, 5, 4, 13, 0, tzinfo=UTC),
     )
     regenerate_series(master)
-    weekdays = {
-        c.starting_time.weekday()
-        for c in Tournament.objects.filter(series_master=master)
-    }
+    weekdays = {c.starting_time.weekday() for c in Tournament.objects.filter(series_master=master)}
     assert weekdays == {0, 3}
 
 

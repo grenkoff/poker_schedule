@@ -15,7 +15,6 @@ from django.utils.translation import gettext_lazy as _
 from apps.users.admin_mixins import StaffAdminMixin
 
 from .columns import _fmt_decimal, _with_unit
-
 from .forms import (
     BlindLevelTemplateInlineForm,
     BlindStructureInlineForm,
@@ -216,6 +215,7 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         return format_html(
             '<span data-tz-times="{}" data-tz-kind="{}">{}</span>', iso, kind, fallback
         )
+
     list_per_page = 100
     search_fields = ("name", "room__name")
     inlines = (BlindStructureInline,)
@@ -229,7 +229,8 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
                 self.admin_site.admin_view(self.autocomplete_json),
                 name="tournaments_tournament_autocomplete_json",
             ),
-        ] + super().get_urls()
+            *super().get_urls(),
+        ]
 
     def autocomplete_json(self, request):
         """Typeahead results for the changelist search box.
@@ -242,10 +243,7 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         if q:
             qs = (
                 Tournament.objects.filter(series_master__isnull=True)
-                .filter(
-                    Q(periodicity__interval_seconds__gt=0)
-                    | Q(late_reg_at__gte=timezone.now())
-                )
+                .filter(Q(periodicity__interval_seconds__gt=0) | Q(late_reg_at__gte=timezone.now()))
                 .filter(Q(name__icontains=q) | Q(room__name__icontains=q))
                 .select_related("room")
                 .order_by("name")[:10]

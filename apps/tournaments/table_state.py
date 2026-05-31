@@ -52,9 +52,7 @@ def parse_params(search: str, mode: str) -> tuple[dict | None, str]:
     # crucially, any junk keys (e.g. a stray "??sort" from a malformed URL) so
     # corruption can never be stored and replayed back into the URL.
     # Also drop BooleanFilter "no selection" sentinels ("unknown").
-    filters = urlencode(
-        [(k, v) for k, v in items if k in allowed and v != "unknown"]
-    )
+    filters = urlencode([(k, v) for k, v in items if k in allowed and v != "unknown"])
 
     sort = None
     pairs = dict(items)

@@ -43,9 +43,7 @@ def tournament_list(request: HttpRequest) -> HttpResponse:
         request.user.table_pref_json = prefs
         request.user.save(update_fields=["table_pref_json"])
     elif (
-        not is_htmx
-        and request.user.is_authenticated
-        and not (set(request.GET.keys()) - _ignorable)
+        not is_htmx and request.user.is_authenticated and not (set(request.GET.keys()) - _ignorable)
     ):
         # Clean URL load — restore the user's saved sort/filter state by
         # redirecting to the public-formatted URL.
