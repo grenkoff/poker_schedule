@@ -136,10 +136,26 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         "game_type",
         "buy_in_display",
         "starting_time",
+        "periodicity",
+        "weekdays_display",
         "verified_by_admin",
     )
-    list_select_related = ("room", "series")
+    list_select_related = ("room", "series", "periodicity")
     ordering = ("name",)
+
+    _WEEKDAY_ABBR = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+    @admin.display(description=_("Active weekdays"))
+    def weekdays_display(self, obj):
+        # `weekdays` is a 7-bit mask (bit i == weekday, Mon=0 … Sun=6); it's
+        # ignored for one-off tournaments.
+        if obj.periodicity_id and obj.periodicity.interval_seconds == 0:
+            return "—"
+        mask = obj.weekdays or 0
+        if mask == 0b1111111:
+            return _("All")
+        days = [self._WEEKDAY_ABBR[i] for i in range(7) if mask & (1 << i)]
+        return ", ".join(str(d) for d in days) if days else "—"
 
     @admin.display(description=_("Tournament series"), ordering="series__name")
     def series_name(self, obj):
