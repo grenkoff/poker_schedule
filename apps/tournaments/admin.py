@@ -1,7 +1,8 @@
 from django.contrib import admin, messages
 from django.db import IntegrityError, transaction
-from django.http import HttpResponseRedirect
-from django.urls import reverse
+from django.db.models import Q
+from django.http import HttpResponseRedirect, JsonResponse
+from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -117,8 +118,13 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     form = TournamentAdminForm
 
     class Media:
-        # Change-form helper: filters the series dropdown by selected room.
-        js = ("admin/js/series_filter.js",)
+        js = (
+            # Change-form helper: filters the series dropdown by selected room.
+            "admin/js/series_filter.js",
+            # Changelist: typeahead dropdown on the search box.
+            "admin/js/tournament_autocomplete.js",
+        )
+        css = {"all": ("admin/css/tournament_autocomplete.css",)}
 
     # Plain Django changelist: a few key columns, alphabetical by name.
     list_display = (
@@ -136,6 +142,45 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     search_fields = ("name", "room__name")
     inlines = (BlindStructureInline,)
     actions = ("mark_verified", "unmark_verified")
+
+    def get_urls(self):
+        # Custom URLs must precede the catch-all `<object_id>/` admin route.
+        return [
+            path(
+                "autocomplete-json/",
+                self.admin_site.admin_view(self.autocomplete_json),
+                name="tournaments_tournament_autocomplete_json",
+            ),
+        ] + super().get_urls()
+
+    def autocomplete_json(self, request):
+        """Typeahead results for the changelist search box.
+
+        Scoped to the same rows the changelist shows (series masters + open
+        one-offs), so every suggestion opens an editable change page.
+        """
+        q = (request.GET.get("q") or "").strip()
+        results = []
+        if q:
+            qs = (
+                Tournament.objects.filter(series_master__isnull=True)
+                .filter(
+                    Q(periodicity__interval_seconds__gt=0)
+                    | Q(late_reg_at__gte=timezone.now())
+                )
+                .filter(Q(name__icontains=q) | Q(room__name__icontains=q))
+                .select_related("room")
+                .order_by("name")[:10]
+            )
+            for t in qs:
+                results.append(
+                    {
+                        "name": t.name,
+                        "room": t.room.name if t.room_id else "",
+                        "url": reverse("admin:tournaments_tournament_change", args=[t.pk]),
+                    }
+                )
+        return JsonResponse({"results": results})
 
     fieldsets = (
         (None, {"fields": ("room", "series", "name", "game_type")}),

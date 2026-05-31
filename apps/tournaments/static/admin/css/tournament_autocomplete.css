@@ -1,0 +1,56 @@
+/* Typeahead dropdown for the tournament changelist search box. */
+
+.tnmt-ac-wrap {
+    position: relative;
+    display: inline-block;
+}
+
+.tnmt-ac-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    margin: 2px 0 0;
+    padding: 0;
+    list-style: none;
+    background: var(--body-bg, #fff);
+    border: 1px solid var(--border-color, #ccc);
+    border-radius: 4px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.tnmt-ac-item {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 12px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    border-bottom: 1px solid var(--hairline-color, #eee);
+}
+
+.tnmt-ac-item:last-child {
+    border-bottom: none;
+}
+
+.tnmt-ac-item.tnmt-ac-active {
+    background: var(--selected-row, #e8f0fe);
+}
+
+.tnmt-ac-name {
+    color: var(--link-fg, #417690);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tnmt-ac-room {
+    color: var(--body-quiet-color, #888);
+    flex-shrink: 0;
+    font-size: 0.8rem;
+}
