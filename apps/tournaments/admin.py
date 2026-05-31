@@ -229,15 +229,22 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         (
             _("Time"),
             {
+                # Recurrence (periodicity + weekdays) lives here now: for a
+                # recurring tournament only the time-of-day + weekdays matter,
+                # not an absolute date. `periodicity` is first because it gates
+                # whether the date inputs and weekday checkboxes are shown.
                 "fields": (
                     "timezone",
+                    "periodicity",
                     "starting_time",
+                    "weekdays",
                     "late_registration_available",
                     "late_reg_at",
                     "late_registration_duration",
                     "late_reg_level",
                     "blind_interval_minutes",
                     "break_minutes",
+                    "series_master",
                 ),
             },
         ),
@@ -248,10 +255,6 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         (
             _("Field"),
             {"fields": ("min_players", "max_players", "re_entry", "bubble")},
-        ),
-        (
-            _("Recurrence"),
-            {"fields": ("periodicity", "weekdays", "series_master")},
         ),
         (
             _("Features"),

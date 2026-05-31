@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import zoneinfo
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from django import forms
@@ -229,6 +230,38 @@ class TournamentSplitDateTimeWidget(AdminSplitDateTime):
         forms.MultiWidget.__init__(self, widgets, attrs)
 
 
+# Sentinel returned by OptionalDateSplitDateTimeField.compress when only the
+# time half was submitted (recurring tournaments hide the date input).
+TIME_ONLY = "__TIME_ONLY__"
+
+
+class OptionalDateSplitDateTimeField(forms.SplitDateTimeField):
+    """Split date+time field whose DATE half may be blank.
+
+    For recurring tournaments the date input is hidden (only the time-of-day
+    matters), so the POST carries just the time. When that happens we return a
+    ``(TIME_ONLY, datetime.time)`` marker that `TournamentAdminForm.clean()`
+    turns into a concrete UTC `starting_time`/`late_reg_at` by synthesizing the
+    anchor date. With a date present it behaves exactly like the parent.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Per-subfield required flags (the parent's require_all_fields=True
+        # had reset both to False): date optional, time required.
+        self.require_all_fields = False
+        self.fields[0].required = False
+        self.fields[1].required = True
+
+    def compress(self, data_list):
+        if not data_list:
+            return None
+        date_part, time_part = data_list
+        if date_part in (None, "") and time_part not in (None, ""):
+            return (TIME_ONLY, time_part)
+        return super().compress(data_list)
+
+
 # One representative IANA zone per whole-hour UTC offset, mirroring the public
 # list's picker (static/js/localize_times.js) so the admin shows each timezone
 # once instead of every IANA name (which duplicates offsets many times over).
@@ -349,13 +382,13 @@ class TournamentAdminForm(forms.ModelForm):
         initial="UTC",
         help_text=_("Wall-clock interpretation of the times below."),
     )
-    starting_time = forms.SplitDateTimeField(
+    starting_time = OptionalDateSplitDateTimeField(
         label=_("Starting time"),
         widget=TournamentSplitDateTimeWidget(),
         input_date_formats=["%d.%m.%Y"],
         input_time_formats=["%H:%M"],
     )
-    late_reg_at = forms.SplitDateTimeField(
+    late_reg_at = OptionalDateSplitDateTimeField(
         label=_("Late registration closes at"),
         widget=TournamentSplitDateTimeWidget(),
         input_date_formats=["%d.%m.%Y"],
@@ -509,27 +542,7 @@ class TournamentAdminForm(forms.ModelForm):
     def clean(self):
         cleaned = super().clean()
 
-        # Interpret the wall-clock datetimes the editor typed as living
-        # in the timezone they picked above, NOT in the request's active
-        # TZ (which is the logged-in admin's profile TZ — unrelated to
-        # the tournament's local time). SplitDateTimeField has already
-        # run `from_current_timezone` and made the value aware, but the
-        # wall-clock components match what the editor typed, so we strip
-        # tzinfo and re-anchor in the picked zone.
-        tz_name = cleaned.get("timezone")
-        if tz_name:
-            try:
-                tz = zoneinfo.ZoneInfo(tz_name)
-            except zoneinfo.ZoneInfoNotFoundError:
-                tz = None
-            if tz is not None:
-                for fname in ("starting_time", "late_reg_at"):
-                    val = cleaned.get(fname)
-                    if val:
-                        wallclock = val.replace(tzinfo=None) if djtz.is_aware(val) else val
-                        cleaned[fname] = djtz.make_aware(wallclock, tz)
-
-        # Series must belong to the same room as the tournament.
+        # --- shared checks, independent of one-off vs recurring ----------
         room = cleaned.get("room")
         series = cleaned.get("series")
         if room is not None and series is not None and series.room_id != room.pk:
@@ -553,45 +566,117 @@ class TournamentAdminForm(forms.ModelForm):
                 _("Max players cannot be less than min players."),
             )
 
+        # --- time + recurrence -------------------------------------------
+        # The editor types wall-clock times in the picked timezone. For a
+        # recurring tournament only the time-of-day + weekdays matter (the
+        # date input is hidden); for a one-off the full date+time is used.
+        tz = None
+        tz_name = cleaned.get("timezone")
+        if tz_name:
+            try:
+                tz = zoneinfo.ZoneInfo(tz_name)
+            except zoneinfo.ZoneInfoNotFoundError:
+                tz = None
+
+        periodicity = cleaned.get("periodicity")
+        recurring = periodicity is not None and periodicity.interval_seconds > 0
+        late_available = cleaned.get("late_registration_available") is not False
+
+        if recurring:
+            if tz is None:
+                self.add_error("timezone", _("Pick a timezone."))
+            else:
+                self._clean_recurring(cleaned, tz, late_available)
+        else:
+            self._clean_one_off(cleaned, tz, late_available)
+
+        return cleaned
+
+    def _typed_time(self, cleaned, fname):
+        """The local wall-clock time-of-day the editor entered for `fname`,
+        regardless of whether the date was present (one-off) or omitted
+        (recurring → `OptionalDateSplitDateTimeField` TIME_ONLY marker)."""
+        val = cleaned.get(fname)
+        if isinstance(val, tuple) and len(val) == 2 and val[0] == TIME_ONLY:
+            return val[1]
+        if isinstance(val, datetime):
+            return val.time()
+        raw = (self.data.get(fname + "_1") or "").strip()
+        if raw:
+            try:
+                return datetime.strptime(raw, "%H:%M").time()
+            except ValueError:
+                return None
+        return None
+
+    def _clean_recurring(self, cleaned, tz, late_available):
+        """Recurring tournament: store an absolute UTC anchor near `now`
+        whose LOCAL time-of-day + weekday match what the editor entered.
+        Weekdays are stored in the tournament's own timezone frame."""
+        mask = cleaned.get("weekdays") or 0
+        if mask == 0:
+            self.add_error("weekdays", _("Pick at least one weekday."))
+            return
+        allowed = {i for i in range(7) if mask & (1 << i)}
+
+        start_t = self._typed_time(cleaned, "starting_time")
+        if start_t is None:
+            self.add_error("starting_time", _("Enter a start time."))
+            return
+
+        # Anchor: the soonest local date (>= today) on an allowed weekday.
+        today = djtz.now().astimezone(tz).date()
+        anchor_date = next(
+            today + timedelta(days=n)
+            for n in range(8)
+            if (today + timedelta(days=n)).weekday() in allowed
+        )
+        cleaned["starting_time"] = djtz.make_aware(datetime.combine(anchor_date, start_t), tz)
+        self.errors.pop("starting_time", None)
+
+        if not late_available:
+            cleaned["late_reg_at"] = cleaned["starting_time"]
+            cleaned["late_reg_level"] = 1
+            self.errors.pop("late_reg_at", None)
+            self.errors.pop("late_reg_level", None)
+            return
+
+        late_t = self._typed_time(cleaned, "late_reg_at")
+        if late_t is None:
+            self.add_error("late_reg_at", _("Enter a late-registration time."))
+            return
+        late_naive = datetime.combine(anchor_date, late_t)
+        if late_t <= start_t:  # closes the next day
+            late_naive += timedelta(days=1)
+        cleaned["late_reg_at"] = djtz.make_aware(late_naive, tz)
+        self.errors.pop("late_reg_at", None)
+
+    def _clean_one_off(self, cleaned, tz, late_available):
+        """One-off tournament: keep the typed wall-clock date+time, just
+        re-anchor it into the picked timezone (not the request's TZ)."""
+        if tz is not None:
+            for fname in ("starting_time", "late_reg_at"):
+                val = cleaned.get(fname)
+                if isinstance(val, datetime):
+                    wallclock = val.replace(tzinfo=None) if djtz.is_aware(val) else val
+                    cleaned[fname] = djtz.make_aware(wallclock, tz)
+
+        cleaned["weekdays"] = 0b1111111
+
         starts = cleaned.get("starting_time")
-        # When late-reg is disabled the close-time defaults to the start
-        # time and the level defaults to 0, so the model-level NOT NULL
-        # constraints stay satisfied without forcing the editor to fill
-        # the (greyed-out) inputs.
-        if cleaned.get("late_registration_available") is False:
-            if starts:
+        if not late_available:
+            if isinstance(starts, datetime):
                 cleaned["late_reg_at"] = starts
                 self.errors.pop("late_reg_at", None)
             cleaned["late_reg_level"] = 1
             self.errors.pop("late_reg_level", None)
         else:
             late = cleaned.get("late_reg_at")
-            if starts and late and late < starts:
+            if isinstance(starts, datetime) and isinstance(late, datetime) and late < starts:
                 self.add_error(
                     "late_reg_at",
                     _("Late registration cannot close before the tournament starts."),
                 )
-
-        # Weekday handling. The field is rendered as disabled checkboxes
-        # whenever the periodicity is unset or one-off, so the POST may
-        # be empty in those cases — substitute the all-days default so
-        # the model has a sensible value either way. For recurring
-        # periodicities the editor must actively pick at least one day
-        # AND the master's own starting weekday must be in the set.
-        periodicity = cleaned.get("periodicity")
-        weekdays_mask = cleaned.get("weekdays") or 0
-        if periodicity is None or periodicity.interval_seconds == 0:
-            cleaned["weekdays"] = 0b1111111
-        else:
-            if weekdays_mask == 0:
-                self.add_error("weekdays", _("Pick at least one weekday."))
-            elif starts is not None and not (weekdays_mask & (1 << starts.weekday())):
-                self.add_error(
-                    "weekdays",
-                    _("Starting time falls on a weekday that isn't selected."),
-                )
-
-        return cleaned
 
     def save(self, commit=True):
         instance = super().save(commit=False)
