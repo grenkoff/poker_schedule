@@ -8,6 +8,8 @@ from django.utils.translation import gettext_lazy as _
 
 from apps.users.admin_mixins import StaffAdminMixin
 
+from .columns import _fmt_decimal, _with_unit
+
 from .forms import (
     BlindLevelTemplateInlineForm,
     BlindStructureInlineForm,
@@ -132,7 +134,7 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         "room",
         "series_name",
         "game_type",
-        "buy_in_total",
+        "buy_in_display",
         "starting_time",
         "verified_by_admin",
     )
@@ -144,6 +146,11 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         # Drop the "Room — " prefix from TournamentSeries.__str__; the Room
         # column already shows it.
         return obj.series.name if obj.series_id else "—"
+
+    @admin.display(description=_("Buy-in (with rake), $"), ordering="buy_in_total")
+    def buy_in_display(self, obj):
+        # Same formatting as the public list: "$1", "$1.88" (no trailing .00).
+        return _with_unit(_fmt_decimal(obj.buy_in_total), prefix="$")
     list_per_page = 100
     search_fields = ("name", "room__name")
     inlines = (BlindStructureInline,)
