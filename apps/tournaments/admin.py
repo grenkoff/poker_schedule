@@ -130,7 +130,7 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     list_display = (
         "name",
         "room",
-        "series",
+        "series_name",
         "game_type",
         "buy_in_total",
         "starting_time",
@@ -138,6 +138,12 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     )
     list_select_related = ("room", "series")
     ordering = ("name",)
+
+    @admin.display(description=_("Tournament series"), ordering="series__name")
+    def series_name(self, obj):
+        # Drop the "Room — " prefix from TournamentSeries.__str__; the Room
+        # column already shows it.
+        return obj.series.name if obj.series_id else "—"
     list_per_page = 100
     search_fields = ("name", "room__name")
     inlines = (BlindStructureInline,)
