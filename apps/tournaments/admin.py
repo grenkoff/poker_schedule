@@ -142,6 +142,7 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     )
     list_select_related = ("room", "series", "periodicity")
     ordering = ("name",)
+    sortable_by = ("name",)  # only Name is sortable; all other headers are plain
 
     _WEEKDAY_ABBR = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
