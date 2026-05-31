@@ -1,9 +1,13 @@
+from datetime import timedelta
+from zoneinfo import ZoneInfo
+
 from django.contrib import admin, messages
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.http import HttpResponseRedirect, JsonResponse
 from django.urls import path, reverse
 from django.utils import timezone
+from django.utils.formats import date_format
 from django.utils.translation import gettext_lazy as _
 
 from apps.users.admin_mixins import StaffAdminMixin
@@ -135,7 +139,7 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         "series_name",
         "game_type",
         "buy_in_display",
-        "starting_time",
+        "starting_time_display",
         "periodicity",
         "weekdays_display",
         "verified_by_admin",
@@ -168,6 +172,27 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     def buy_in_display(self, obj):
         # Same formatting as the public list: "$1", "$1.88" (no trailing .00).
         return _with_unit(_fmt_decimal(obj.buy_in_total), prefix="$")
+
+    @admin.display(description=_("Starting time"), ordering="starting_time")
+    def starting_time_display(self, obj):
+        """One-off → full date+time. Recurring → just the local time(s) of
+        day in the tournament's own timezone (a list for sub-daily), since
+        the date is irrelevant for a repeating schedule."""
+        interval = obj.periodicity.interval_seconds if obj.periodicity_id else 0
+        if interval == 0:
+            return date_format(timezone.localtime(obj.starting_time), "DATETIME_FORMAT")
+        try:
+            tz = ZoneInfo(obj.timezone or "UTC")
+        except Exception:
+            tz = ZoneInfo("UTC")
+        local_start = obj.starting_time.astimezone(tz)
+        if interval >= 86400:  # daily / weekly → one time per day
+            return local_start.strftime("%H:%M")
+        # Sub-daily: every start time within a 24h day.
+        step = timedelta(seconds=interval)
+        n = max(1, 86400 // interval)
+        times = sorted({(local_start + step * i).strftime("%H:%M") for i in range(n)})
+        return ", ".join(times)
     list_per_page = 100
     search_fields = ("name", "room__name")
     inlines = (BlindStructureInline,)
