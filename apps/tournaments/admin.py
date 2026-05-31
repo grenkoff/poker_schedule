@@ -1,3 +1,4 @@
+import json
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 
@@ -8,6 +9,7 @@ from django.http import HttpResponseRedirect, JsonResponse
 from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.formats import date_format
+from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
 from apps.users.admin_mixins import StaffAdminMixin
@@ -129,6 +131,8 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
             "admin/js/series_filter.js",
             # Changelist: typeahead dropdown on the search box.
             "admin/js/tournament_autocomplete.js",
+            # Changelist: timezone picker in the Starting time column header.
+            "admin/js/starting_time_tz.js",
         )
         css = {"all": ("admin/css/tournament_autocomplete.css",)}
 
@@ -176,23 +180,42 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     @admin.display(description=_("Starting time"), ordering="starting_time")
     def starting_time_display(self, obj):
         """One-off → full date+time. Recurring → just the local time(s) of
-        day in the tournament's own timezone (a list for sub-daily), since
-        the date is irrelevant for a repeating schedule."""
+        day (a list for sub-daily), since the date is irrelevant for a
+        repeating schedule.
+
+        Emits the underlying UTC instant(s) as data attributes so the column
+        header's timezone picker (starting_time_tz.js) can recompute the
+        displayed time(s) in any offset; the server-rendered text (in the
+        tournament's own timezone) is the no-JS fallback.
+        """
         interval = obj.periodicity.interval_seconds if obj.periodicity_id else 0
-        if interval == 0:
-            return date_format(timezone.localtime(obj.starting_time), "DATETIME_FORMAT")
         try:
             tz = ZoneInfo(obj.timezone or "UTC")
         except Exception:
             tz = ZoneInfo("UTC")
-        local_start = obj.starting_time.astimezone(tz)
-        if interval >= 86400:  # daily / weekly → one time per day
-            return local_start.strftime("%H:%M")
-        # Sub-daily: every start time within a 24h day.
-        step = timedelta(seconds=interval)
-        n = max(1, 86400 // interval)
-        times = sorted({(local_start + step * i).strftime("%H:%M") for i in range(n)})
-        return ", ".join(times)
+
+        if interval == 0:
+            instants = [obj.starting_time]
+            kind = "datetime"
+            fallback = date_format(timezone.localtime(obj.starting_time), "DATETIME_FORMAT")
+        elif interval >= 86400:  # daily / weekly → one time per day
+            instants = [obj.starting_time]
+            kind = "time"
+            fallback = obj.starting_time.astimezone(tz).strftime("%H:%M")
+        else:  # sub-daily → every start time within a 24h day
+            step = timedelta(seconds=interval)
+            n = max(1, 86400 // interval)
+            instants = [obj.starting_time + step * i for i in range(n)]
+            local_start = obj.starting_time.astimezone(tz)
+            fallback = ", ".join(
+                sorted({(local_start + step * i).strftime("%H:%M") for i in range(n)})
+            )
+            kind = "time"
+
+        iso = json.dumps([dt.isoformat() for dt in instants])
+        return format_html(
+            '<span data-tz-times="{}" data-tz-kind="{}">{}</span>', iso, kind, fallback
+        )
     list_per_page = 100
     search_fields = ("name", "room__name")
     inlines = (BlindStructureInline,)

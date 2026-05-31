@@ -1,5 +1,16 @@
 /* Typeahead dropdown for the tournament changelist search box. */
 
+/* Timezone picker injected into the "Starting time" column header. */
+#result_list thead th.column-starting_time_display select.tnmt-tz-picker {
+    margin-top: 4px;
+    max-width: 150px;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: 0.75rem;
+    padding: 2px 4px;
+}
+
 /* Full-width search input: lay out icon + input + button as a flex row that
    spans the whole content column, and let the input grow — so the box doesn't
    collapse to a sliver on narrow viewports. */
