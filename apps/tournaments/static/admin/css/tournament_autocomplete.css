@@ -34,8 +34,10 @@
     left: 0;
     right: 0;
     z-index: 1000;
-    margin: 2px 0 0;
-    padding: 0;
+    /* !important: Django admin's `ul` rules add margin-left/padding-left,
+       which would shift the dropdown right of the input's left edge. */
+    margin: 2px 0 0 !important;
+    padding: 0 !important;
     list-style: none;
     background: var(--body-bg, #fff);
     border: 1px solid var(--border-color, #ccc);
