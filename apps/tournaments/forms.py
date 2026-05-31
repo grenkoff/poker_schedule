@@ -229,27 +229,50 @@ class TournamentSplitDateTimeWidget(AdminSplitDateTime):
         forms.MultiWidget.__init__(self, widgets, attrs)
 
 
+# One representative IANA zone per whole-hour UTC offset, mirroring the public
+# list's picker (static/js/localize_times.js) so the admin shows each timezone
+# once instead of every IANA name (which duplicates offsets many times over).
+# (iana_name, fixed_offset_minutes, city_label)
+_TZ_CHOICES_RAW: tuple[tuple[str, int, str], ...] = (
+    ("Etc/GMT+12", -720, "Baker Island"),
+    ("Pacific/Pago_Pago", -660, "Pago Pago"),
+    ("Pacific/Honolulu", -600, "Honolulu"),
+    ("America/Anchorage", -540, "Anchorage"),
+    ("America/Los_Angeles", -480, "Los Angeles"),
+    ("America/Denver", -420, "Denver"),
+    ("America/Mexico_City", -360, "Mexico City"),
+    ("America/New_York", -300, "New York"),
+    ("America/Santiago", -240, "Santiago"),
+    ("America/Sao_Paulo", -180, "São Paulo"),
+    ("Atlantic/South_Georgia", -120, "South Georgia"),
+    ("Atlantic/Azores", -60, "Azores"),
+    ("UTC", 0, "UTC"),
+    ("Europe/Berlin", 60, "Berlin"),
+    ("Europe/Athens", 120, "Athens"),
+    ("Europe/Moscow", 180, "Moscow"),
+    ("Asia/Dubai", 240, "Dubai"),
+    ("Asia/Almaty", 300, "Almaty"),
+    ("Asia/Dhaka", 360, "Dhaka"),
+    ("Asia/Bangkok", 420, "Bangkok"),
+    ("Asia/Singapore", 480, "Singapore"),
+    ("Asia/Tokyo", 540, "Tokyo"),
+    ("Australia/Sydney", 600, "Sydney"),
+    ("Pacific/Noumea", 660, "Nouméa"),
+    ("Pacific/Auckland", 720, "Auckland"),
+    ("Pacific/Apia", 780, "Apia"),
+    ("Pacific/Kiritimati", 840, "Kiritimati"),
+)
+
+
 def _timezone_choices() -> list[tuple[str, str]]:
-    """`(value, label)` pairs sorted by current UTC offset.
-
-    Label format mirrors Windows/Linux system pickers, e.g.
-    `(UTC+03:00) Europe/Moscow`. The IANA name remains the stored value.
-    """
-    from datetime import datetime
-
-    now = datetime.now(tz=zoneinfo.ZoneInfo("UTC"))
-    rows: list[tuple[int, str, str]] = []
-    for name in zoneinfo.available_timezones():
-        offset = zoneinfo.ZoneInfo(name).utcoffset(now)
-        if offset is None:
-            continue
-        total_minutes = int(offset.total_seconds() // 60)
-        sign = "+" if total_minutes >= 0 else "-"
-        h, m = divmod(abs(total_minutes), 60)
-        label = f"(UTC{sign}{h:02d}:{m:02d}) {name}"
-        rows.append((total_minutes, label, name))
-    rows.sort(key=lambda r: (r[0], r[2]))
-    return [(name, label) for _, label, name in rows]
+    """`(iana_name, label)` pairs — one per UTC offset, e.g.
+    `("Europe/Moscow", "(UTC+03:00) Moscow")`."""
+    rows = []
+    for name, mins, city in _TZ_CHOICES_RAW:
+        sign = "+" if mins >= 0 else "-"
+        h, m = divmod(abs(mins), 60)
+        rows.append((name, f"(UTC{sign}{h:02d}:{m:02d}) {city}"))
+    return rows
 
 
 _BLIND_INPUT_WIDTH = "width: 10em;"
@@ -442,6 +465,12 @@ class TournamentAdminForm(forms.ModelForm):
             # directly without re-converting.
             instance_tz = self.instance.timezone
             if instance_tz:
+                # Keep a previously-stored zone selectable even if it's not in
+                # the curated one-per-offset list (so editing never silently
+                # changes it).
+                tz_field = self.fields["timezone"]
+                if instance_tz not in {c[0] for c in tz_field.choices}:
+                    tz_field.choices = [(instance_tz, instance_tz), *tz_field.choices]
                 try:
                     tz = zoneinfo.ZoneInfo(instance_tz)
                 except zoneinfo.ZoneInfoNotFoundError:
