@@ -1,5 +1,28 @@
 /* Typeahead dropdown for the tournament changelist search box. */
 
+/* Full-width search input: lay out icon + input + button as a flex row that
+   spans the whole content column, and let the input grow — so the box doesn't
+   collapse to a sliver on narrow viewports. */
+#changelist-search > div {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    max-width: none !important;  /* Django admin caps this at 480px */
+    box-sizing: border-box;
+}
+#changelist-search .tnmt-ac-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+/* !important to beat Django admin's responsive.css, which shrinks #searchbar
+   at narrow viewports. */
+#changelist-search #searchbar {
+    width: 100% !important;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
 .tnmt-ac-wrap {
     position: relative;
     display: inline-block;
