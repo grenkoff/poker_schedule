@@ -41,6 +41,16 @@
         list.hidden = true;
         wrap.appendChild(list);
 
+        // Clear (×) button inside the input, shown only when there's text.
+        var clearBtn = document.createElement("button");
+        clearBtn.type = "button";
+        clearBtn.className = "tnmt-ac-clear";
+        clearBtn.setAttribute("aria-label", "Clear search");
+        clearBtn.innerHTML = "&times;";
+        wrap.appendChild(clearBtn);
+
+        function toggleClear() { clearBtn.hidden = !input.value; }
+
         input.setAttribute("autocomplete", "off");
 
         var items = [];     // [{name, room, url}]
@@ -112,6 +122,15 @@
         }, 180);
 
         input.addEventListener("input", fetchSuggestions);
+        input.addEventListener("input", toggleClear);
+
+        clearBtn.addEventListener("click", function () {
+            input.value = "";
+            lastQuery = null;
+            close();
+            toggleClear();
+            input.focus();
+        });
 
         input.addEventListener("keydown", function (e) {
             if (list.hidden || !items.length) return;
@@ -139,6 +158,8 @@
         document.addEventListener("click", function (e) {
             if (!wrap.contains(e.target)) close();
         });
+
+        toggleClear();  // input may arrive pre-filled (e.g. ?q= in the URL)
     }
 
     if (document.readyState === "loading") {

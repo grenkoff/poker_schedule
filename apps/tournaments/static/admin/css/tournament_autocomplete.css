@@ -21,11 +21,43 @@
     width: 100% !important;
     min-width: 0;
     box-sizing: border-box;
+    height: 40px;
+    padding: 6px 34px 6px 12px;  /* right padding leaves room for the × button */
+    font-size: 0.95rem;
+}
+
+/* Match the Search button height to the taller input. */
+#changelist-search input[type="submit"] {
+    height: 40px;
+    padding: 0 16px;
 }
 
 .tnmt-ac-wrap {
     position: relative;
     display: inline-block;
+}
+
+/* Clear (×) button inside the input. */
+.tnmt-ac-clear {
+    position: absolute;
+    top: 50%;
+    right: 8px;
+    transform: translateY(-50%);
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--body-quiet-color, #888);
+    font-size: 20px;
+    line-height: 20px;
+    text-align: center;
+    cursor: pointer;
+}
+.tnmt-ac-clear:hover {
+    background: var(--darkened-bg, #f0f0f0);
+    color: var(--body-fg, #333);
 }
 
 .tnmt-ac-list {
