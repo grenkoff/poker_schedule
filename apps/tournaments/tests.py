@@ -112,7 +112,10 @@ def test_tournament_timezone_default_is_utc(pokerok):
 
 
 @pytest.mark.django_db
-def test_admin_form_rejects_late_reg_before_start(pokerok):
+def test_admin_form_allows_late_reg_before_start(pokerok):
+    """A one-off whose late-reg time is earlier than the start time is
+    accepted: the client- and server-side ordering restriction was
+    removed, so the editor is trusted with whatever times they enter."""
     from apps.tournaments.forms import TournamentAdminForm
 
     form = TournamentAdminForm(
@@ -149,8 +152,8 @@ def test_admin_form_rejects_late_reg_before_start(pokerok):
             "featured_final_table": "",
         }
     )
-    assert not form.is_valid()
-    assert "late_reg_at" in form.errors
+    assert form.is_valid(), form.errors
+    assert "late_reg_at" not in form.errors
 
 
 @pytest.mark.django_db

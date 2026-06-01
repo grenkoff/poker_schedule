@@ -140,7 +140,6 @@
             const cell = e.target.closest(".tnmt-time-cell");
             if (!cell || !_activeTimeInput) return;
             e.stopPropagation();
-            if (cell.classList.contains("tnmt-time-cell-disabled")) return;
             const col = cell.parentNode;
             const kind = col.dataset.kind;
             const v = cell.dataset.value;
@@ -148,12 +147,6 @@
             let hh = m ? pad(parseInt(m[1], 10)) : "00";
             let mm = m ? m[2] : "00";
             if (kind === "h") hh = v; else mm = v;
-            // Picking a new hour can shift which minutes are valid; if
-            // the resulting minute would now be invalid, snap to the min.
-            if (kind === "h") {
-                const minMin = minMinuteForHour(parseInt(hh, 10));
-                if (parseInt(mm, 10) < minMin) mm = pad(minMin);
-            }
             _activeTimeInput.value = hh + ":" + mm;
             _activeTimeInput.dispatchEvent(new Event("input", { bubbles: true }));
             _activeTimeInput.dispatchEvent(new Event("change", { bubbles: true }));
@@ -192,47 +185,16 @@
         return _timePopup;
     }
 
-    /** Returns the minimum allowed minute when picking the late-reg time
-     *  in the given hour, given the current starting time. Returns 0 when
-     *  the constraint doesn't apply. */
-    function minMinuteForHour(hour) {
-        if (!_activeTimeInput || _activeTimeInput.name !== "late_reg_at_1") return 0;
-        const f = fields();
-        const start = parseDdmmyyyyHhmm(f.startDate && f.startDate.value, f.startTime && f.startTime.value);
-        const lateD = parseDdmmyyyy(f.lateDate && f.lateDate.value);
-        if (!start || !lateD || !sameYMD(start, lateD)) return 0;
-        if (hour === start.getHours()) return start.getMinutes();
-        return 0;
-    }
-
     function refreshTimePopupDisabled() {
         const popup = _timePopup;
-        if (!popup || !_activeTimeInput) return;
+        if (!popup) return;
+        // Every hour/minute cell is always selectable, regardless of
+        // one-off vs recurring or the starting time. The server validates
+        // the late-reg/start relationship and wraps past midnight for
+        // recurring tournaments, so the picker imposes no restriction here.
         $$(".tnmt-time-cell", popup).forEach(function (c) {
             c.classList.remove("tnmt-time-cell-disabled");
         });
-        if (_activeTimeInput.name !== "late_reg_at_1") return;
-        const f = fields();
-        const start = parseDdmmyyyyHhmm(f.startDate && f.startDate.value, f.startTime && f.startTime.value);
-        const lateD = parseDdmmyyyy(f.lateDate && f.lateDate.value);
-        if (!start) return;
-        if (!lateD || !sameYMD(start, lateD)) return; // different day → no constraint
-        const startHour = start.getHours();
-        const startMin = start.getMinutes();
-        $$('[data-kind="h"] .tnmt-time-cell', popup).forEach(function (c) {
-            if (parseInt(c.dataset.value, 10) < startHour) {
-                c.classList.add("tnmt-time-cell-disabled");
-            }
-        });
-        const m = (_activeTimeInput.value || "").match(/^(\d{1,2}):(\d{2})$/);
-        const curHour = m ? parseInt(m[1], 10) : startHour;
-        if (curHour <= startHour) {
-            $$('[data-kind="m"] .tnmt-time-cell', popup).forEach(function (c) {
-                if (parseInt(c.dataset.value, 10) < startMin) {
-                    c.classList.add("tnmt-time-cell-disabled");
-                }
-            });
-        }
     }
 
     function closeOtherPickers() {
@@ -596,24 +558,6 @@
         });
     }
 
-    function clientSideOrderingValidation() {
-        const f = fields();
-        const submit = function (e) {
-            const start = parseDdmmyyyyHhmm(f.startDate && f.startDate.value, f.startTime && f.startTime.value);
-            const late = parseDdmmyyyyHhmm(f.lateDate && f.lateDate.value, f.lateTime && f.lateTime.value);
-            if (start && late && late < start) {
-                e.preventDefault();
-                e.stopPropagation();
-                f.lateTime && f.lateTime.focus();
-                window.alert(
-                    "Late registration cannot close before the tournament starts."
-                );
-            }
-        };
-        const realForm = document.getElementById("tournament_form");
-        if (realForm) realForm.addEventListener("submit", submit);
-    }
-
     /** In the late-reg calendar, grey out and disable any day strictly
      *  earlier than the starting date so the editor literally can't
      *  pick a late-reg before the tournament starts. Pure class toggling
@@ -792,7 +736,6 @@
         bindDurationRecalc();
         bindStartChangeSnaps();
         recomputeDuration();
-        clientSideOrderingValidation();
         bindGlobalDismissers();
         bindDatePickerGating();
         clampBoundedIntFields();
