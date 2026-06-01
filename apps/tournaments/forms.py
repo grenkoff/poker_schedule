@@ -419,6 +419,9 @@ class TournamentAdminForm(forms.ModelForm):
             # so it converts integer inputs to type=text before autonumber
             # dispatches input events that the formatter listens for.
             "admin/js/integer_thousand_seps.js",
+            # integer_spinners must load AFTER integer_thousand_seps so the
+            # inputs are already type=text + data-int-format when it wraps them.
+            "admin/js/integer_spinners.js",
             "admin/js/buyin_autofill.js",
             "admin/js/clear_required_errors.js",
             "admin/js/digits_only.js",
@@ -427,7 +430,13 @@ class TournamentAdminForm(forms.ModelForm):
             "admin/js/blind_template_apply.js",
             "admin/js/weekdays_presets.js",
         )
-        css = {"all": ("admin/css/tournament_form.css", "admin/css/blind_inline.css")}
+        css = {
+            "all": (
+                "admin/css/tournament_form.css",
+                "admin/css/blind_inline.css",
+                "admin/css/integer_spinners.css",
+            )
+        }
 
     class Meta:
         model = Tournament
@@ -670,13 +679,6 @@ class TournamentAdminForm(forms.ModelForm):
                 self.errors.pop("late_reg_at", None)
             cleaned["late_reg_level"] = 1
             self.errors.pop("late_reg_level", None)
-        else:
-            late = cleaned.get("late_reg_at")
-            if isinstance(starts, datetime) and isinstance(late, datetime) and late < starts:
-                self.add_error(
-                    "late_reg_at",
-                    _("Late registration cannot close before the tournament starts."),
-                )
 
     def save(self, commit=True):
         instance = super().save(commit=False)

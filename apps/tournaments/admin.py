@@ -75,9 +75,10 @@ class BlindStructureTemplateAdmin(StaffAdminMixin, admin.ModelAdmin):
         # integer_thousand_seps must load first — see TournamentAdminForm.Media.
         js = (
             "admin/js/integer_thousand_seps.js",
+            "admin/js/integer_spinners.js",
             "admin/js/blind_levels_autonumber.js",
         )
-        css = {"all": ("admin/css/blind_inline.css",)}
+        css = {"all": ("admin/css/blind_inline.css", "admin/css/integer_spinners.css")}
 
     @admin.display(description=_("levels"))
     def level_count(self, obj) -> int:

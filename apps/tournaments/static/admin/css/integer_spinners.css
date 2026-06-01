@@ -1,0 +1,57 @@
+/* Custom up/down spinner buttons for integer inputs (see
+   integer_spinners.js). Native <input type=number> spinners are lost when
+   integer_thousand_seps.js converts those inputs to type=text. */
+
+.tnmt-spin-wrap {
+    position: relative;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+/* Leave room on the right for the button column without changing the
+   field's outer width (so existing layouts/min-widths are preserved). */
+.tnmt-spin-wrap > input {
+    padding-right: 20px;
+    box-sizing: border-box;
+}
+
+.tnmt-spin-btns {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    bottom: 1px;
+    width: 17px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.tnmt-spin-btn {
+    flex: 1 1 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-left: 1px solid #ccc;
+    background: #f4f4f4;
+    color: #555;
+    font-size: 7px;
+    line-height: 1;
+    cursor: pointer;
+    user-select: none;
+}
+
+.tnmt-spin-up {
+    border-bottom: 1px solid #ccc;
+}
+
+.tnmt-spin-btn:hover {
+    background: #e6e6e6;
+    color: #222;
+}
+
+.tnmt-spin-btn:active {
+    background: #d8d8d8;
+}
