@@ -11,6 +11,8 @@
         var bounty = document.getElementById("id_bounty_buyin");
         var rake = document.getElementById("id_rake");
         var total = document.getElementById("id_buy_in_total");
+        var bountyType = document.getElementById("id_bounty_type");
+        var minBounty = document.getElementById("id_min_bounty");
         if (!withoutRake || !rake || !total) {
             return;
         }
@@ -131,7 +133,22 @@
 
         var rakePercent = document.getElementById("id_rake_percent");
 
+        // Bounty type / minimum bounty are only meaningful when the
+        // bounty-pool buy-in is > 0, so gate them on that value. Disabled
+        // inputs aren't submitted, so a tournament that drops its bounty
+        // buy-in to 0 also clears the bounty type on save.
+        function syncBountyGating() {
+            var b = bounty ? parse(bounty) : null;
+            var active = b !== null && b > 0;
+            [bountyType, minBounty].forEach(function (el) {
+                if (el) {
+                    el.disabled = !active;
+                }
+            });
+        }
+
         function recompute() {
+            syncBountyGating();
             var w = parse(withoutRake);
             var r = parse(rake);
             var b = bounty ? parse(bounty) || 0 : 0;
