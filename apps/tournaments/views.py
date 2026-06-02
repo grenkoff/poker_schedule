@@ -57,7 +57,7 @@ def tournament_list(request: HttpRequest) -> HttpResponse:
     qs = Tournament.objects.filter(
         late_reg_at__gte=timezone.now(),
         verified_by_admin=True,
-    ).select_related("room", "room__network", "re_entry", "series")
+    ).select_related("room", "room__network", "re_entry", "series", "bounty_type")
     q = (request.GET.get("q") or "").strip()
     if q:
         qs = qs.filter(Q(name__icontains=q) | Q(room__name__icontains=q))

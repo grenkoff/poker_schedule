@@ -160,7 +160,7 @@ ALL_COLUMNS: tuple[Column, ...] = (
     Column(
         "bounty_type",
         _("Bounty"),
-        lambda t: t.bounty_type.label if t.bounty_type_id else "—",
+        lambda t: t.bounty_type.label if t.bounty_type else "—",
     ),
     Column(
         "min_bounty",
