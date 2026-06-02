@@ -104,11 +104,16 @@
                 {{ t.name }}
                 {% if t.featured_final_table %} ★FT{% endif %}
                 {% if t.early_bird %} EB{% endif %}
+                {% if t.is_bounty %} KO{% endif %}
             </td>
             <td><span class="tag">{{ t.get_game_type_display }}</span></td>
             <td>
                 {{ t.buy_in_total|money:"USD" }}
+                {% if t.is_bounty %}
+                <span class="muted">({{ t.buy_in_without_rake|money:"USD" }} + {{ t.bounty_buyin|money:"USD" }} bounty + {{ t.rake|money:"USD" }})</span>
+                {% else %}
                 <span class="muted">({{ t.buy_in_without_rake|money:"USD" }} + {{ t.rake|money:"USD" }})</span>
+                {% endif %}
             </td>
             <td>${{ t.guaranteed_dollars }}</td>
             <td>{{ t.starting_time|date:"Y-m-d H:i T" }}</td>

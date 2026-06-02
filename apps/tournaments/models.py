@@ -59,6 +59,14 @@ class DealMakingOption(_OptionBase):
         verbose_name_plural = _("deal-making options")
 
 
+class BountyOption(_OptionBase):
+    """Bounty format of a knockout tournament (e.g. Progressive, Mystery)."""
+
+    class Meta(_OptionBase.Meta):
+        verbose_name = _("bounty option")
+        verbose_name_plural = _("bounty options")
+
+
 class Periodicity(_OptionBase):
     """How often a tournament recurs.
 
@@ -115,9 +123,11 @@ class TournamentSeries(models.Model):
 class Tournament(models.Model):
     """Manually-entered poker tournament.
 
-    Buy-in is decomposed into three decimal-dollar fields: `buy_in_total`,
-    `buy_in_without_rake`, and `rake`. The admin form lets the editor
-    enter any two; the third is auto-derived. All three are stored.
+    Buy-in splits into a prize-pool portion (`buy_in_without_rake`), an
+    optional bounty-pool portion (`bounty_buyin`, 0 for non-bounty events)
+    and `rake`. `buy_in_total` is their sum, auto-derived in the admin form
+    and stored. Bounty tournaments additionally carry a `bounty_type` and a
+    `min_bounty`; `is_bounty` is derived from `bounty_type` being set.
     """
 
     # --- identification -------------------------------------------------
@@ -144,7 +154,14 @@ class Tournament(models.Model):
     # --- money (stored in dollars) --------------------------------------
     buy_in_total = models.DecimalField(_("buy-in (with rake), $"), max_digits=10, decimal_places=2)
     buy_in_without_rake = models.DecimalField(
-        _("buy-in (without rake), $"), max_digits=10, decimal_places=2
+        _("buy-in to prize pool, $"), max_digits=10, decimal_places=2
+    )
+    bounty_buyin = models.DecimalField(
+        _("buy-in to bounty pool, $"),
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text=_("Portion of the buy-in funding the bounty pool. 0 for non-bounty events."),
     )
     rake = models.DecimalField(_("rake, $"), max_digits=10, decimal_places=2)
     guaranteed_dollars = models.PositiveBigIntegerField(
@@ -290,6 +307,28 @@ class Tournament(models.Model):
         verbose_name=_("deal making"),
         null=True,
         blank=True,
+    )
+
+    # --- bounty ---------------------------------------------------------
+    # `is_bounty` is auto-derived from `bounty_type` in the admin form (any
+    # value → True, blank → False), mirroring the early_bird / early_bird_type
+    # pair. The DB column stays so filters and list columns keep working.
+    is_bounty = models.BooleanField(_("bounty"), default=False)
+    bounty_type = models.ForeignKey(
+        BountyOption,
+        on_delete=models.PROTECT,
+        related_name="tournaments",
+        verbose_name=_("bounty"),
+        null=True,
+        blank=True,
+    )
+    min_bounty = models.DecimalField(
+        _("minimum bounty, $"),
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=_("Smallest bounty paid per knockout."),
     )
 
     # --- workflow (kept from before) ------------------------------------

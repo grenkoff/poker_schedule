@@ -26,6 +26,7 @@ from .models import (
     BlindLevelTemplate,
     BlindStructure,
     BlindStructureTemplate,
+    BountyOption,
     BubbleOption,
     DealMakingOption,
     EarlyBirdType,
@@ -262,8 +263,16 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
     fieldsets = (
         (None, {"fields": ("room", "series", "name", "game_type")}),
         (
-            _("Buy-in (with rake = without rake + rake; auto-computed)"),
-            {"fields": ("buy_in_without_rake", "rake", "rake_percent", "buy_in_total")},
+            _("Buy-in (with rake = prize pool + bounty + rake; auto-computed)"),
+            {
+                "fields": (
+                    "buy_in_without_rake",
+                    "bounty_buyin",
+                    "rake",
+                    "rake_percent",
+                    "buy_in_total",
+                )
+            },
         ),
         (
             _("Prize"),
@@ -310,6 +319,16 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
                     "early_bird_type",
                     "featured_final_table",
                     "deal_making",
+                ),
+            },
+        ),
+        (
+            _("Bounty"),
+            {
+                "fields": ("bounty_type", "min_bounty"),
+                "description": _(
+                    "Pick a bounty type to mark this as a bounty tournament. "
+                    "The bounty buy-in portion is set in the Buy-in section above."
                 ),
             },
         ),
@@ -600,6 +619,11 @@ class EarlyBirdTypeAdmin(_OptionAdmin):
 
 @admin.register(DealMakingOption)
 class DealMakingOptionAdmin(_OptionAdmin):
+    pass
+
+
+@admin.register(BountyOption)
+class BountyOptionAdmin(_OptionAdmin):
     pass
 
 

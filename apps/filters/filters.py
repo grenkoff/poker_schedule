@@ -18,6 +18,7 @@ from django.utils.translation import gettext_lazy as _
 
 from apps.rooms.models import PokerRoom
 from apps.tournaments.models import (
+    BountyOption,
     BubbleOption,
     EarlyBirdType,
     GameType,
@@ -53,6 +54,11 @@ class TournamentFilter(django_filters.FilterSet):
         widget=forms.CheckboxSelectMultiple,
         label=_("Early bird type"),
     )
+    bounty_type = django_filters.ModelMultipleChoiceFilter(
+        queryset=BountyOption.objects.all(),
+        widget=forms.CheckboxSelectMultiple,
+        label=_("Bounty type"),
+    )
 
     buy_in_min = django_filters.NumberFilter(
         method="filter_buy_in_min",
@@ -78,6 +84,7 @@ class TournamentFilter(django_filters.FilterSet):
 
     early_bird = django_filters.BooleanFilter(label=_("Early bird"))
     featured_final_table = django_filters.BooleanFilter(label=_("Featured FT"))
+    is_bounty = django_filters.BooleanFilter(label=_("Bounty"))
 
     class Meta:
         model = Tournament
