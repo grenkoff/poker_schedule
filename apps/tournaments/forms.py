@@ -509,6 +509,18 @@ class TournamentAdminForm(forms.ModelForm):
         for name in ("min_players", "max_players"):
             if name in self.fields:
                 self.fields[name].widget.attrs["min"] = "1"
+        # These integer inputs routinely hold thousand-separated values
+        # (commas) and carry a spinner button, so the admin default width
+        # clips them (e.g. "10,000"). Widen them to fit.
+        wide_int = {
+            "guaranteed_dollars": "10em",
+            "starting_stack": "8em",
+            "min_players": "8em",
+            "max_players": "8em",
+        }
+        for name, width in wide_int.items():
+            if name in self.fields:
+                self.fields[name].widget.attrs["style"] = f"width: {width};"
         if self.instance and self.instance.pk:
             self.fields["buy_in_total"].initial = self.instance.buy_in_total
             self.fields["buy_in_without_rake"].initial = self.instance.buy_in_without_rake
