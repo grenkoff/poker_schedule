@@ -271,7 +271,13 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
                     "rake",
                     "rake_percent",
                     "buy_in_total",
-                )
+                    "bounty_type",
+                    "min_bounty",
+                ),
+                "description": _(
+                    "Bounty type and minimum bounty become editable once the "
+                    "bounty-pool buy-in is greater than 0."
+                ),
             },
         ),
         (
@@ -319,16 +325,6 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
                     "early_bird_type",
                     "featured_final_table",
                     "deal_making",
-                ),
-            },
-        ),
-        (
-            _("Bounty"),
-            {
-                "fields": ("bounty_type", "min_bounty"),
-                "description": _(
-                    "Pick a bounty type to mark this as a bounty tournament. "
-                    "The bounty buy-in portion is set in the Buy-in section above."
                 ),
             },
         ),
