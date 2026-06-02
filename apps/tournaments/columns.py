@@ -129,10 +129,17 @@ ALL_COLUMNS: tuple[Column, ...] = (
     ),
     Column(
         "buy_in_without_rake",
-        _("Buy-in without rake, $"),
+        _("Buy-in to prize pool, $"),
         lambda t: _with_unit(_fmt_decimal(t.buy_in_without_rake), prefix="$"),
         sort_key="buy_in_without_rake",
         db_field="buy_in_without_rake",
+    ),
+    Column(
+        "bounty_buyin",
+        _("Buy-in to bounty pool, $"),
+        lambda t: _with_unit(_fmt_decimal(t.bounty_buyin), prefix="$") if t.is_bounty else "—",
+        sort_key="bounty_buyin",
+        db_field="bounty_buyin",
     ),
     Column(
         "rake",
@@ -148,6 +155,18 @@ ALL_COLUMNS: tuple[Column, ...] = (
             _with_unit(_fmt_decimal(t.rake / t.buy_in_total * 100), suffix="%")
             if t.buy_in_total
             else "—"
+        ),
+    ),
+    Column(
+        "bounty_type",
+        _("Bounty"),
+        lambda t: t.bounty_type.label if t.bounty_type else "—",
+    ),
+    Column(
+        "min_bounty",
+        _("Min bounty, $"),
+        lambda t: (
+            _with_unit(_fmt_decimal(t.min_bounty), prefix="$") if t.min_bounty is not None else "—"
         ),
     ),
     Column(

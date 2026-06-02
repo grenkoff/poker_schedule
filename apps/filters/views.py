@@ -68,7 +68,7 @@ def shared_view(request: HttpRequest, slug: str) -> HttpResponse:
 
     # Same "late-reg still open" filter as the public list view.
     qs = Tournament.objects.filter(late_reg_at__gte=timezone.now()).select_related(
-        "room", "room__network", "re_entry", "series"
+        "room", "room__network", "re_entry", "series", "bounty_type"
     )
     filterset = TournamentFilter(merged, queryset=qs)
     filtered = apply_sort(filterset.qs, merged.get("sort"))

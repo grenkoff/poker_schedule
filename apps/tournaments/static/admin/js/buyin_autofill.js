@@ -1,12 +1,14 @@
-// `Buy-in with rake` is always derived from `Buy-in without rake + Rake`
-// and rendered read-only. This script keeps the visible value in sync as
-// the editor types into the other two fields. The server-side `clean()`
-// is still authoritative.
+// `Buy-in with rake` is always derived from
+// `prize-pool buy-in + bounty buy-in + Rake` and rendered read-only. This
+// script keeps the visible value in sync as the editor types into the other
+// fields (bounty is optional/0 for non-bounty events). The server-side
+// `clean()` is still authoritative.
 (function () {
     "use strict";
 
     function init() {
         var withoutRake = document.getElementById("id_buy_in_without_rake");
+        var bounty = document.getElementById("id_bounty_buyin");
         var rake = document.getElementById("id_rake");
         var total = document.getElementById("id_buy_in_total");
         if (!withoutRake || !rake || !total) {
@@ -132,6 +134,7 @@
         function recompute() {
             var w = parse(withoutRake);
             var r = parse(rake);
+            var b = bounty ? parse(bounty) || 0 : 0;
             if (w === null || r === null) {
                 total.value = "";
                 if (rakePercent) {
@@ -139,7 +142,7 @@
                 }
                 return;
             }
-            var sum = w + r;
+            var sum = w + b + r;
             if (sum < 0) {
                 total.value = "";
                 if (rakePercent) {
@@ -153,7 +156,8 @@
             }
         }
 
-        [withoutRake, rake].forEach(function (f) {
+        [withoutRake, bounty, rake].forEach(function (f) {
+            if (!f) return;
             f.addEventListener("input", recompute);
             f.addEventListener("blur", function () {
                 var n = parse(f);

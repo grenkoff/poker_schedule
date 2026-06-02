@@ -75,6 +75,7 @@ def _build_child(master, next_start: datetime, late_reg_offset: timedelta):
         game_type=master.game_type,
         buy_in_total=master.buy_in_total,
         buy_in_without_rake=master.buy_in_without_rake,
+        bounty_buyin=master.bounty_buyin,
         rake=master.rake,
         guaranteed_dollars=master.guaranteed_dollars,
         payout_percent=master.payout_percent,
@@ -97,6 +98,9 @@ def _build_child(master, next_start: datetime, late_reg_offset: timedelta):
         series_master=master,
         early_bird=master.early_bird,
         early_bird_type=master.early_bird_type,
+        is_bounty=master.is_bounty,
+        bounty_type=master.bounty_type,
+        min_bounty=master.min_bounty,
         featured_final_table=master.featured_final_table,
         verified_by_admin=master.verified_by_admin,
     )

@@ -11,6 +11,7 @@ from apps.tournaments.models import (
     BlindLevelTemplate,
     BlindStructure,
     BlindStructureTemplate,
+    BountyOption,
     BubbleOption,
     EarlyBirdType,
     GameType,
@@ -279,6 +280,7 @@ def test_option_models_seeded():
     assert ReEntryOption.objects.filter(name="unlimited").exists()
     assert BubbleOption.objects.filter(name="finalized_when_registration_closes").exists()
     assert EarlyBirdType.objects.filter(name="compensated_at_bubble").exists()
+    assert BountyOption.objects.filter(name="progressive").exists()
 
 
 @pytest.mark.django_db
@@ -313,6 +315,78 @@ def test_regenerate_series_every_24_hours_within_30_day_horizon(pokerok):
     offset = master.late_reg_at - master.starting_time
     for child in children:
         assert child.late_reg_at - child.starting_time == offset
+
+
+@pytest.mark.django_db
+def test_regenerate_series_copies_bounty_fields(pokerok):
+    daily = Periodicity.objects.get(name="every_24_hours")
+    master = _make_tournament(
+        pokerok,
+        periodicity=daily,
+        is_bounty=True,
+        bounty_type=BountyOption.objects.get(name="progressive"),
+        bounty_buyin=Decimal("0.50"),
+        min_bounty=Decimal("0.50"),
+    )
+    BlindStructure.objects.create(tournament=master, level=1, small_blind=10, big_blind=20)
+    regenerate_series(master)
+    children = Tournament.objects.filter(series_master=master)
+    assert children.count() == 30
+    for child in children:
+        assert child.is_bounty is True
+        assert child.bounty_type_id == master.bounty_type_id
+        assert child.bounty_buyin == Decimal("0.50")
+        assert child.min_bounty == Decimal("0.50")
+
+
+@pytest.mark.django_db
+def test_admin_form_three_part_buyin_and_is_bounty(pokerok):
+    """Bounty tournament: total = prize + bounty + rake, is_bounty derived."""
+    from apps.tournaments.forms import TournamentAdminForm
+
+    form = TournamentAdminForm(
+        data={
+            "room": str(pokerok.pk),
+            "series": str(_default_series(pokerok).pk),
+            "name": "KO Special",
+            "game_type": GameType.NLHE,
+            "buy_in_without_rake": "0.49",
+            "bounty_buyin": "0.50",
+            "rake": "0.09",
+            "guaranteed_dollars": "100",
+            "payout_percent": "15",
+            "starting_stack": "10000",
+            "starting_stack_bb": "50",
+            "timezone": "UTC",
+            "late_registration_available": "on",
+            "starting_time_0": "01.05.2026",
+            "starting_time_1": "20:00",
+            "late_reg_at_0": "01.05.2026",
+            "late_reg_at_1": "21:00",
+            "late_reg_level": "12",
+            "blind_interval_minutes": "10",
+            "break_minutes": "5",
+            "players_per_table": "9",
+            "players_at_final_table": "9",
+            "min_players": "2",
+            "max_players": "1000",
+            "re_entry": str(ReEntryOption.objects.get(name="unlimited").pk),
+            "bubble": str(BubbleOption.objects.get(name="finalized_when_registration_closes").pk),
+            "periodicity": str(Periodicity.objects.get(name="one_off").pk),
+            "weekdays": ["0", "1", "2", "3", "4", "5", "6"],
+            "early_bird": "",
+            "early_bird_type": str(EarlyBirdType.objects.get(name="compensated_at_bubble").pk),
+            "featured_final_table": "",
+            "bounty_type": str(BountyOption.objects.get(name="progressive").pk),
+            "min_bounty": "0.50",
+        }
+    )
+    assert form.is_valid(), form.errors
+    saved = form.save()
+    assert saved.buy_in_total == Decimal("1.08")
+    assert saved.bounty_buyin == Decimal("0.50")
+    assert saved.min_bounty == Decimal("0.50")
+    assert saved.is_bounty is True
 
 
 @pytest.mark.django_db

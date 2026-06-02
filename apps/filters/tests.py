@@ -149,6 +149,28 @@ def test_filter_buy_in_range(pokerok: PokerRoom):
     assert list(fs.qs.values_list("name", flat=True)) == ["mid"]
 
 
+# --- filter: bounty -------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_filter_bounty(pokerok: PokerRoom):
+    from apps.tournaments.models import BountyOption
+
+    _make(pokerok, name="regular")
+    ko = _make(pokerok, name="ko")
+    ko.is_bounty = True
+    ko.bounty_type = BountyOption.objects.get(name="progressive")
+    ko.save(update_fields=["is_bounty", "bounty_type"])
+
+    only_bounty = TournamentFilter({"is_bounty": True}, queryset=Tournament.objects.all())
+    assert list(only_bounty.qs.values_list("name", flat=True)) == ["ko"]
+
+    by_type = TournamentFilter(
+        {"bounty_type": [ko.bounty_type.pk]}, queryset=Tournament.objects.all()
+    )
+    assert list(by_type.qs.values_list("name", flat=True)) == ["ko"]
+
+
 # --- filter: starting time + boolean flags --------------------------------
 
 

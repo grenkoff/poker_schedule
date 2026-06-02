@@ -2,7 +2,7 @@
 pages render for a superuser, and the unverify bulk action on Tournament
 clears the verified flag."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
@@ -83,8 +83,8 @@ def tournament_with_children() -> Tournament:
         payout_percent=15,
         starting_stack=10000,
         starting_stack_bb=50,
-        starting_time=datetime(2026, 6, 1, 20, 0, tzinfo=UTC),
-        late_reg_at=datetime(2026, 6, 1, 21, 0, tzinfo=UTC),
+        starting_time=timezone.now() + timedelta(hours=1),
+        late_reg_at=timezone.now() + timedelta(hours=2),
         late_reg_level=12,
         blind_interval_minutes=10,
         break_minutes=5,

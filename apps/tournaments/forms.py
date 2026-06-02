@@ -351,10 +351,18 @@ class BlindLevelTemplateInlineForm(_BlindRowFormMixin, forms.ModelForm):
 
 class TournamentAdminForm(forms.ModelForm):
     buy_in_without_rake = forms.DecimalField(
-        label=_("Buy-in without rake, $"),
+        label=_("Buy-in to prize pool, $"),
         max_digits=12,
         decimal_places=2,
         widget=forms.TextInput(attrs={"inputmode": "decimal"}),
+    )
+    bounty_buyin = forms.DecimalField(
+        label=_("Buy-in to bounty pool, $"),
+        max_digits=12,
+        decimal_places=2,
+        required=False,
+        widget=forms.TextInput(attrs={"inputmode": "decimal"}),
+        help_text=_("Leave at 0 for non-bounty tournaments."),
     )
     rake = forms.DecimalField(
         label=_("Rake, $"),
@@ -374,7 +382,14 @@ class TournamentAdminForm(forms.ModelForm):
         decimal_places=2,
         required=False,
         widget=forms.TextInput(attrs={"inputmode": "decimal", **_GREY_READONLY}),
-        help_text=_("Auto-computed from buy-in without rake + rake."),
+        help_text=_("Auto-computed: prize-pool buy-in + bounty buy-in + rake."),
+    )
+    min_bounty = forms.DecimalField(
+        label=_("Minimum bounty, $"),
+        max_digits=12,
+        decimal_places=2,
+        required=False,
+        widget=forms.TextInput(attrs={"inputmode": "decimal"}),
     )
     timezone = forms.ChoiceField(
         label=_("Timezone"),
@@ -469,6 +484,7 @@ class TournamentAdminForm(forms.ModelForm):
             "early_bird_type",
             "featured_final_table",
             "deal_making",
+            "bounty_type",
         )
 
     def __init__(self, *args, **kwargs):
@@ -496,7 +512,9 @@ class TournamentAdminForm(forms.ModelForm):
         if self.instance and self.instance.pk:
             self.fields["buy_in_total"].initial = self.instance.buy_in_total
             self.fields["buy_in_without_rake"].initial = self.instance.buy_in_without_rake
+            self.fields["bounty_buyin"].initial = self.instance.bounty_buyin
             self.fields["rake"].initial = self.instance.rake
+            self.fields["min_bounty"].initial = self.instance.min_bounty
             if self.instance.buy_in_total:
                 pct = self.instance.rake * Decimal(100) / self.instance.buy_in_total
                 self.fields["rake_percent"].initial = f"{pct:.2f}"
@@ -561,11 +579,15 @@ class TournamentAdminForm(forms.ModelForm):
             )
 
         without = cleaned.get("buy_in_without_rake")
+        bounty = cleaned.get("bounty_buyin") or Decimal(0)
         rake = cleaned.get("rake")
         if without is not None and rake is not None:
-            if without < 0 or rake < 0:
-                raise forms.ValidationError(_("Buy-in and rake must be non-negative."))
-            cleaned["buy_in_total"] = without + rake
+            if without < 0 or bounty < 0 or rake < 0:
+                raise forms.ValidationError(_("Buy-in parts must be non-negative."))
+            cleaned["buy_in_total"] = without + bounty + rake
+        min_bounty = cleaned.get("min_bounty")
+        if min_bounty is not None and min_bounty < 0:
+            self.add_error("min_bounty", _("Minimum bounty must be non-negative."))
 
         min_p = cleaned.get("min_players")
         max_p = cleaned.get("max_players")
@@ -684,11 +706,13 @@ class TournamentAdminForm(forms.ModelForm):
         instance = super().save(commit=False)
         instance.buy_in_total = self.cleaned_data["buy_in_total"]
         instance.buy_in_without_rake = self.cleaned_data["buy_in_without_rake"]
+        instance.bounty_buyin = self.cleaned_data.get("bounty_buyin") or Decimal(0)
         instance.rake = self.cleaned_data["rake"]
-        # Derive the `early_bird` boolean from the (now optional) type
-        # dropdown — picking any type means early-bird is active; leaving
-        # it blank means it's not.
+        instance.min_bounty = self.cleaned_data.get("min_bounty")
+        # Derive the `early_bird` / `is_bounty` booleans from their (optional)
+        # type dropdowns — picking any value means the feature is active.
         instance.early_bird = bool(self.cleaned_data.get("early_bird_type"))
+        instance.is_bounty = bool(self.cleaned_data.get("bounty_type"))
         if commit:
             instance.save()
             self.save_m2m()
