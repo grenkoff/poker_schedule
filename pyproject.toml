@@ -14,6 +14,8 @@ dependencies = [
     "weasyprint>=62",
     "whitenoise>=6.7",
     "pillow>=12.2.0",
+    "django-import-export>=4",
+    "openpyxl>=3.1",
 ]
 
 [dependency-groups]
@@ -77,6 +79,14 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "weasyprint.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "import_export.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tablib.*"
 ignore_missing_imports = true
 
 [tool.django-stubs]
