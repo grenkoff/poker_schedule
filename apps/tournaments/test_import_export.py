@@ -122,7 +122,9 @@ def test_import_creates_tournament(superuser, series):
     row["name"] = "Imported NLHE"
     row["buy_in_total"] = "999.00"  # deliberately wrong; must be recomputed
 
-    result = TournamentResource(user=superuser).import_data(_dataset_from_rows([row]), dry_run=False)
+    result = TournamentResource(user=superuser).import_data(
+        _dataset_from_rows([row]), dry_run=False
+    )
     assert not result.has_errors(), result.row_errors()
 
     created = Tournament.objects.get(name="Imported NLHE")
@@ -144,7 +146,9 @@ def test_import_derives_is_bounty(superuser, series):
     row["bounty_buyin"] = "10.00"
     row["bounty_type"] = BountyOption.objects.first().name
 
-    result = TournamentResource(user=superuser).import_data(_dataset_from_rows([row]), dry_run=False)
+    result = TournamentResource(user=superuser).import_data(
+        _dataset_from_rows([row]), dry_run=False
+    )
     assert not result.has_errors(), result.row_errors()
 
     created = Tournament.objects.get(name="Bounty NLHE")
@@ -159,7 +163,9 @@ def test_import_updates_by_id(superuser, series):
     row["name"] = "Renamed"
 
     before = Tournament.objects.count()
-    result = TournamentResource(user=superuser).import_data(_dataset_from_rows([row]), dry_run=False)
+    result = TournamentResource(user=superuser).import_data(
+        _dataset_from_rows([row]), dry_run=False
+    )
     assert not result.has_errors(), result.row_errors()
 
     assert Tournament.objects.count() == before  # updated, not duplicated
@@ -184,9 +190,7 @@ def test_round_trip(superuser, series):
 def test_import_bad_series_row_errors(superuser, series):
     # A series that belongs to a *different* room must not resolve for pokerok.
     other_net, _ = Network.objects.get_or_create(slug="othernet", defaults={"name": "OtherNet"})
-    other_room = PokerRoom.objects.create(
-        name="OtherRoom", slug="otherroom", network=other_net
-    )
+    other_room = PokerRoom.objects.create(name="OtherRoom", slug="otherroom", network=other_net)
     TournamentSeries.objects.create(room=other_room, slug="foreign", name="Foreign Series")
 
     template = _make_tournament(series)

@@ -51,9 +51,7 @@ class SeriesWidget(ForeignKeyWidget):
             qs = qs.filter(room__name=room_name)
         obj = qs.first()
         if obj is None:
-            raise ValueError(
-                f"Tournament series '{value}' not found for room '{room_name}'."
-            )
+            raise ValueError(f"Tournament series '{value}' not found for room '{room_name}'.")
         return obj
 
 
