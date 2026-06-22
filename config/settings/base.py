@@ -27,6 +27,7 @@ DJANGO_APPS = [
 
 THIRD_PARTY_APPS: list[str] = [
     "django_filters",
+    "import_export",
     "allauth",
     "allauth.account",
     "allauth.mfa",
@@ -159,3 +160,9 @@ MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# --- Import / export ----------------------------------------------------
+
+# Wrap each admin import in a transaction so a bad row aborts the whole
+# file instead of leaving half the tournaments created.
+IMPORT_EXPORT_USE_TRANSACTIONS = True

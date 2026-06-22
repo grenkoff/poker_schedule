@@ -11,6 +11,8 @@ from django.utils import timezone
 from django.utils.formats import date_format
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
+from import_export.admin import ImportExportMixin
+from import_export.formats import base_formats
 
 from apps.users.admin_mixins import StaffAdminMixin
 
@@ -39,6 +41,7 @@ from .models import (
     template_id_for_signature,
 )
 from .recurrence import extend_series_to_horizon, regenerate_series
+from .resources import TournamentResource
 
 
 class BlindStructureInline(admin.TabularInline):
@@ -123,8 +126,13 @@ class BlindStructureTemplateAdmin(StaffAdminMixin, admin.ModelAdmin):
 
 
 @admin.register(Tournament)
-class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
+class TournamentAdmin(ImportExportMixin, StaffAdminMixin, admin.ModelAdmin):
     form = TournamentAdminForm
+
+    # Excel round-trip (see resources.TournamentResource). xlsx only, to keep
+    # the import/export dialogs to a single relevant format.
+    resource_classes = (TournamentResource,)
+    formats = (base_formats.XLSX,)
 
     class Media:
         js = (
@@ -424,6 +432,23 @@ class TournamentAdmin(StaffAdminMixin, admin.ModelAdmin):
         if obj is None or request.user.is_superuser:
             return True
         return not obj.verified_by_admin
+
+    # --- import/export gating (consistent with StaffAdminMixin) ----------
+    def has_import_permission(self, request) -> bool:
+        return bool(request.user and request.user.is_staff)
+
+    def has_export_permission(self, request) -> bool:
+        return bool(request.user and request.user.is_staff)
+
+    def get_import_resource_kwargs(self, request, **kwargs):
+        kwargs = super().get_import_resource_kwargs(request, **kwargs)
+        kwargs["user"] = request.user
+        return kwargs
+
+    def get_export_resource_kwargs(self, request, **kwargs):
+        kwargs = super().get_export_resource_kwargs(request, **kwargs)
+        kwargs["user"] = request.user
+        return kwargs
 
     def save_model(self, request, obj, form, change):
         obj.verified_by_admin = bool(request.user.is_superuser)
