@@ -12,7 +12,6 @@ from django.utils.formats import date_format
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from import_export.admin import ImportExportMixin
-from import_export.formats import base_formats
 
 from apps.users.admin_mixins import StaffAdminMixin
 
@@ -42,6 +41,7 @@ from .models import (
 )
 from .recurrence import extend_series_to_horizon, regenerate_series
 from .resources import TournamentResource
+from .xlsx_export import LockedDropdownXLSX
 
 
 class BlindStructureInline(admin.TabularInline):
@@ -132,7 +132,9 @@ class TournamentAdmin(ImportExportMixin, StaffAdminMixin, admin.ModelAdmin):
     # Excel round-trip (see resources.TournamentResource). xlsx only, to keep
     # the import/export dialogs to a single relevant format.
     resource_classes = (TournamentResource,)
-    formats = (base_formats.XLSX,)
+    # Export hardens the file (locked id/header + option dropdowns); import reads
+    # it back unchanged. See xlsx_export.LockedDropdownXLSX.
+    formats = (LockedDropdownXLSX,)
 
     class Media:
         js = (
