@@ -8,6 +8,7 @@ a series that belongs to a different room is rejected as a row error.
 
 from datetime import timedelta
 from decimal import Decimal
+from io import BytesIO
 
 import pytest
 import tablib
@@ -26,6 +27,7 @@ from apps.tournaments.models import (
     TournamentSeries,
 )
 from apps.tournaments.resources import TournamentResource
+from apps.tournaments.xlsx_export import LockedDropdownXLSX
 
 User = get_user_model()
 
@@ -184,6 +186,55 @@ def test_round_trip(superuser, series):
 
     assert not result.has_errors(), result.row_errors()
     assert Tournament.objects.count() == before  # unchanged rows, no new ones
+
+
+@pytest.mark.django_db
+def test_export_locks_id_and_adds_dropdowns(superuser, series):
+    import openpyxl
+
+    t = _make_tournament(series)
+    dataset = _export_dataset(superuser, Tournament.objects.filter(pk=t.pk))
+    content = LockedDropdownXLSX().export_data(dataset)
+
+    wb = openpyxl.load_workbook(BytesIO(content))
+    ws = wb.active
+    headers = [c.value for c in ws[1]]
+    id_col = headers.index("id") + 1
+    room_col = headers.index("room") + 1
+
+    # Sheet protection is on; id cells + the header row are locked, data cells aren't.
+    assert ws.protection.sheet is True
+    assert ws.cell(row=2, column=id_col).protection.locked is True
+    assert ws.cell(row=1, column=room_col).protection.locked is True
+    assert ws.cell(row=2, column=room_col).protection.locked is False
+
+    # The option columns carry a list validation pointing at the hidden sheet.
+    assert "lists" in wb.sheetnames
+    assert wb["lists"].sheet_state == "hidden"
+    validated_ranges = " ".join(str(dv.sqref) for dv in ws.data_validations.dataValidation)
+    from openpyxl.utils import get_column_letter
+
+    assert get_column_letter(room_col) in validated_ranges
+
+
+@pytest.mark.django_db
+def test_hardened_export_still_imports(superuser, series):
+    """The locked/dropdown file round-trips through import unchanged."""
+    import openpyxl
+
+    _make_tournament(series, name="A")
+    _make_tournament(series, name="B")
+    dataset = _export_dataset(superuser, Tournament.objects.all())
+    content = LockedDropdownXLSX().export_data(dataset)
+
+    reparsed = LockedDropdownXLSX().create_dataset(content)
+    before = Tournament.objects.count()
+    result = TournamentResource(user=superuser).import_data(reparsed, dry_run=False)
+
+    assert not result.has_errors(), result.row_errors()
+    assert Tournament.objects.count() == before  # updated in place, no duplicates
+    # The hidden helper sheet must not leak into the parsed data.
+    assert openpyxl.load_workbook(BytesIO(content)).active.title != "lists"
 
 
 @pytest.mark.django_db
