@@ -234,6 +234,35 @@ def test_export_locks_id_and_adds_dropdowns(superuser, series):
 
 
 @pytest.mark.django_db
+def test_series_dropdown_cascades_from_room(superuser, series):
+    import openpyxl
+    from openpyxl.utils import get_column_letter
+
+    t = _make_tournament(series)
+    dataset = _export_dataset(superuser, Tournament.objects.filter(pk=t.pk))
+    content = LockedDropdownXLSX().export_data(dataset)
+
+    wb = openpyxl.load_workbook(BytesIO(content))
+    ws = wb.active
+    headers = [c.value for c in ws[1]]
+    room_letter = get_column_letter(headers.index("room") + 1)
+    series_letter = get_column_letter(headers.index("series") + 1)
+
+    # The room has a named range over its series on the hidden sheet.
+    assert series.room.name in wb.defined_names
+    assert wb.defined_names[series.room.name].attr_text.startswith("lists!")
+
+    # The series column validates against INDIRECT(<room cell>) — empty room → empty list.
+    series_dvs = [
+        dv
+        for dv in ws.data_validations.dataValidation
+        if any(rng.coord.startswith(series_letter) for rng in dv.cells.ranges)
+    ]
+    assert len(series_dvs) == 1
+    assert series_dvs[0].formula1 == f"INDIRECT(${room_letter}2)"
+
+
+@pytest.mark.django_db
 def test_hardened_export_still_imports(superuser, series):
     """The locked/dropdown file round-trips through import unchanged."""
     import openpyxl

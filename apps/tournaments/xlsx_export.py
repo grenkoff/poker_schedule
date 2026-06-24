@@ -15,6 +15,10 @@ to add two editor affordances, then hands the bytes onward unchanged:
   exact strings import accepts — FK columns export the option ``name`` slug,
   ``game_type`` exports the choice code. The option values live on a hidden
   helper sheet so we're not bound by the 255-char inline-list limit.
+* ``series`` is a *cascading* dropdown scoped to the row's ``room``: each room
+  gets a named range over its series on the helper sheet and the series cell
+  validates against ``INDIRECT(<room cell>)``, so it stays empty until a room is
+  picked and then offers only that room's series.
 * Read-only columns are shaded grey, each header carries a hover note, and a
   visible "Инструкция" sheet spells out the legend for whoever fills the file.
 
@@ -25,9 +29,17 @@ import unchanged (it reads only the active data sheet's header + rows).
 
 from __future__ import annotations
 
+import re
 from io import BytesIO
 
 from import_export.formats import base_formats
+
+# A workbook-defined name must start with a letter/underscore, hold only
+# letters/digits/_/. and not look like a cell reference (e.g. "AB12"). Room
+# names are used verbatim as range names for the cascading series dropdown, so
+# any room whose name fails this is skipped (its series simply won't cascade).
+_VALID_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
+_CELL_REF_RE = re.compile(r"^[A-Za-z]{1,3}[0-9]+$")
 
 # Columns whose valid values are a closed set. `series` is deliberately absent:
 # its options depend on the row's `room`, so a flat dropdown would offer
@@ -94,6 +106,34 @@ def _dropdown_options() -> dict[str, list[str]]:
     }
 
 
+def _series_by_room() -> dict[str, list[str]]:
+    """Series names grouped by room name, in display order.
+
+    Drives the cascading ``series`` dropdown; every series (including the legacy
+    "Default") is kept so existing exported values stay valid against the list.
+    """
+    from collections import defaultdict
+
+    from .models import TournamentSeries
+
+    grouped: dict[str, list[str]] = defaultdict(list)
+    qs = TournamentSeries.objects.select_related("room").order_by(
+        "room__name", "sort_order", "name"
+    )
+    for series in qs:
+        grouped[series.room.name].append(series.name)
+    return grouped
+
+
+def _valid_range_name(name: str) -> str | None:
+    """Return ``name`` if it's usable verbatim as an Excel defined name, else None."""
+    if len(name) > 255 or not _VALID_NAME_RE.fullmatch(name) or _CELL_REF_RE.fullmatch(name):
+        return None
+    if name.upper() in {"R", "C"}:  # reserved single-letter names
+        return None
+    return name
+
+
 def _harden_workbook(content: bytes) -> bytes:
     import openpyxl
     from openpyxl.comments import Comment
@@ -112,20 +152,50 @@ def _harden_workbook(content: bytes) -> bytes:
     options = _dropdown_options()
     lists = wb.create_sheet("lists")
     lists.sheet_state = "hidden"
-    for list_col, column_name in enumerate(_DROPDOWN_COLUMNS, start=1):
+    next_list_col = 1  # next free column on the hidden helper sheet
+    for column_name in _DROPDOWN_COLUMNS:
         values = options.get(column_name)
         target_col = col_of.get(column_name)
         if not values or not target_col:
             continue
-        letter = get_column_letter(list_col)
-        lists.cell(row=1, column=list_col, value=column_name)
+        letter = get_column_letter(next_list_col)
+        lists.cell(row=1, column=next_list_col, value=column_name)
         for offset, value in enumerate(values, start=2):
-            lists.cell(row=offset, column=list_col, value=value)
+            lists.cell(row=offset, column=next_list_col, value=value)
         ref = f"lists!${letter}$2:${letter}${len(values) + 1}"
         dv = DataValidation(type="list", formula1=ref, allow_blank=True)
         ws.add_data_validation(dv)
         target_letter = get_column_letter(target_col)
         dv.add(f"{target_letter}2:{target_letter}{last_row}")
+        next_list_col += 1
+
+    # --- cascading series dropdown, scoped to the row's room -------------
+    series_col = col_of.get("series")
+    room_col = col_of.get("room")
+    if series_col and room_col:
+        from openpyxl.workbook.defined_name import DefinedName
+
+        for room_name, series_names in _series_by_room().items():
+            safe = _valid_range_name(room_name)
+            if not series_names or safe is None:
+                continue
+            letter = get_column_letter(next_list_col)
+            lists.cell(row=1, column=next_list_col, value=room_name)
+            for offset, value in enumerate(series_names, start=2):
+                lists.cell(row=offset, column=next_list_col, value=value)
+            ref = f"lists!${letter}$2:${letter}${len(series_names) + 1}"
+            wb.defined_names.add(DefinedName(safe, attr_text=ref))
+            next_list_col += 1
+
+        # INDIRECT resolves the room cell value to its named range; an empty
+        # room → empty list, so series stays inactive until a room is chosen.
+        room_letter = get_column_letter(room_col)
+        series_letter = get_column_letter(series_col)
+        series_dv = DataValidation(
+            type="list", formula1=f"INDIRECT(${room_letter}2)", allow_blank=True
+        )
+        ws.add_data_validation(series_dv)
+        series_dv.add(f"{series_letter}2:{series_letter}{last_row}")
 
     # --- lock id + computed columns + header, grey-shade read-only cols --
     locked_cols = {col_of[name] for name in ("id", *_COMPUTED_COLUMNS) if name in col_of}
@@ -154,7 +224,10 @@ def _harden_workbook(content: bytes) -> bytes:
         "Только чтение. Оставьте пустым для нового турнира; "
         "заполненный id обновляет существующий турнир."
     )
-    notes["series"] = "Впишите название серии. Серия должна принадлежать выбранной комнате (room)."
+    notes["series"] = (
+        "Сначала выберите room — затем здесь появится список серий этой комнаты. "
+        "Пока room пустой, список недоступен."
+    )
     notes["starting_time"] = "Формат: ГГГГ-ММ-ДД ЧЧ:ММ, например 2026-06-22 19:30."
     notes["late_reg_at"] = notes["starting_time"]
     for name, text in notes.items():
@@ -206,7 +279,11 @@ def _add_instruction_sheet(wb) -> None:
         ),
         ("", False),
         ("series", True),
-        ("Впишите название серии. Серия должна принадлежать выбранной комнате (room).", False),
+        (
+            "Зависит от room: сначала выберите комнату — затем в series появится "
+            "список серий этой комнаты. Пока room пустой, выбор серии недоступен.",
+            False,
+        ),
         ("", False),
         ("Дата и время (starting_time, late_reg_at)", True),
         ("Формат ГГГГ-ММ-ДД ЧЧ:ММ, например 2026-06-22 19:30.", False),
