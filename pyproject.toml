@@ -52,6 +52,8 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+# Russian editor-facing legend/notes intentionally contain Cyrillic.
+"apps/tournaments/xlsx_export.py" = ["RUF001"]
 "**/tests/**" = ["S"]
 "**/tests.py" = ["S"]
 "**/test_*.py" = ["S"]
