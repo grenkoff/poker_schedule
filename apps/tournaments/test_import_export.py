@@ -199,7 +199,7 @@ def test_round_trip(superuser, series):
 
 
 @pytest.mark.django_db
-def test_export_uses_admin_labels_grey_and_autofilter(superuser, series):
+def test_export_uses_admin_labels_locked_and_filterable(superuser, series):
     import openpyxl
     from openpyxl.utils import get_column_letter
 
@@ -216,16 +216,20 @@ def test_export_uses_admin_labels_grey_and_autofilter(superuser, series):
     assert "id" not in headers and "series" not in headers
     room_col = headers.index(L["room"]) + 1
 
-    # No sheet protection (so sort/filter works); instead the table is an AutoFilter.
-    assert not ws.protection.sheet
+    # Sheet is protected, but AutoFilter is allowed (filtering works, sorting blocked).
+    assert ws.protection.sheet is True
+    assert ws.protection.autoFilter is False  # False == filtering allowed
     assert ws.auto_filter.ref and ws.auto_filter.ref.startswith("A1:")
     assert ws.freeze_panes == "A2"
 
-    # Read-only columns are grey-shaded; editable ones aren't.
+    # Read-only columns are locked + grey-shaded; editable ones aren't.
     for field in ("id", "buy_in_total", "is_bounty", "early_bird"):
         col = headers.index(L[field]) + 1
         assert ws.cell(row=2, column=col).fill.fill_type == "solid", field
+        assert ws.cell(row=2, column=col).protection.locked is True, field
     assert ws.cell(row=2, column=room_col).fill.fill_type in (None, "none")
+    assert ws.cell(row=2, column=room_col).protection.locked is False
+    assert ws.cell(row=1, column=room_col).protection.locked is True  # header locked
 
     # verified_by_admin is recomputed on import but never exported.
     assert L.get("verified_by_admin") is None  # not even mapped

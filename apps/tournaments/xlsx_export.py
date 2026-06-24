@@ -4,12 +4,12 @@
 or attach dropdowns. So this format runs the tablib output back through openpyxl
 to add editor affordances, then hands the bytes onward unchanged:
 
-* The whole header row is an AutoFilter, so every column sorts and filters; the
-  header row is frozen. The sheet is intentionally *not* protected — Excel can't
-  sort a protected sheet with locked cells, and sort/filter is the priority.
-* The columns recomputed/ignored on import (``id``, ``buy_in_total``,
-  ``is_bounty``, ``early_bird``) are shaded grey as a read-only cue; ``id`` is the
-  import match key and the others are overwritten on import.
+* The sheet is protected with ``id``, the recomputed columns (``buy_in_total``,
+  ``is_bounty``, ``early_bird``) and the header row locked (and shaded grey),
+  every other cell editable. ``id`` is the import match key; the others are
+  overwritten on import. AutoFilter is left enabled so columns can be *filtered*
+  (sorting stays blocked — it would move the locked cells, which protection
+  forbids); the header row is frozen.
 * Columns backed by a fixed option set get a data-validation dropdown listing the
   exact strings import accepts — FK columns export the option ``name`` slug,
   ``game_type`` exports the choice code. The option values live on a hidden
@@ -23,9 +23,9 @@ to add editor affordances, then hands the bytes onward unchanged:
 Columns are headed with the admin-form labels (`COLUMN_LABELS` in `resources`);
 this module maps field names to those labels to locate each column.
 
-Import is untouched: the parsing path (`create_dataset`) ignores validation,
-fills and extra sheets, so a file produced here round-trips through import
-unchanged (it reads only the active data sheet's header + rows).
+Import is untouched: the parsing path (`create_dataset`) ignores protection,
+validation, fills and extra sheets, so a file produced here round-trips through
+import unchanged (it reads only the active data sheet's header + rows).
 """
 
 from __future__ import annotations
@@ -142,7 +142,7 @@ def _valid_range_name(name: str) -> str | None:
 def _harden_workbook(content: bytes) -> bytes:
     import openpyxl
     from openpyxl.comments import Comment
-    from openpyxl.styles import PatternFill
+    from openpyxl.styles import PatternFill, Protection
     from openpyxl.utils import get_column_letter
     from openpyxl.worksheet.datavalidation import DataValidation
 
@@ -209,18 +209,25 @@ def _harden_workbook(content: bytes) -> bytes:
         ws.add_data_validation(series_dv)
         series_dv.add(f"{series_letter}2:{series_letter}{last_row}")
 
-    # --- grey-shade the read-only (computed) columns ---------------------
-    # No sheet protection on purpose: Excel can't sort a protected sheet whose
-    # cells are locked, and sortable/filterable columns are the priority. The
-    # grey fill + header notes flag the columns import recomputes / ignores.
+    # --- lock id + computed + header; grey-shade those read-only columns -
+    # Sheet protection keeps the import key (id) and the recomputed columns
+    # read-only, every other cell (plus the empty-row buffer) editable.
     grey = PatternFill(start_color=_LOCKED_FILL, end_color=_LOCKED_FILL, fill_type="solid")
-    read_only_cols = {col_of(name) for name in ("id", *_COMPUTED_COLUMNS)}
-    read_only_cols.discard(None)
-    for col in read_only_cols:
-        for row in range(1, last_row + 1):
-            ws.cell(row=row, column=col).fill = grey
-
-    # --- sortable/filterable header + frozen header row -----------------
+    locked_cols = {col_of(name) for name in ("id", *_COMPUTED_COLUMNS)}
+    locked_cols.discard(None)
+    unlocked = Protection(locked=False)
+    locked = Protection(locked=True)
+    for row in range(1, last_row + 1):
+        for col in range(1, len(headers) + 1):
+            cell = ws.cell(row=row, column=col)
+            in_locked_col = col in locked_cols
+            cell.protection = locked if (row == 1 or in_locked_col) else unlocked
+            if in_locked_col:
+                cell.fill = grey
+    ws.protection.sheet = True
+    # Allow filtering on the protected sheet (sorting stays blocked — it would
+    # move the locked id/computed cells, which protection forbids).
+    ws.protection.autoFilter = False
     ws.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{data_last_row}"
     ws.freeze_panes = "A2"  # keep headers visible while scrolling
 
@@ -259,7 +266,7 @@ def _harden_workbook(content: bytes) -> bytes:
 
 
 class LockedDropdownXLSX(base_formats.XLSX):
-    """XLSX export with grey read-only columns, AutoFilter and option dropdowns.
+    """XLSX export with locked read-only columns, filtering and option dropdowns.
 
     Inherits the import path unchanged; only the export bytes are reworked.
     """
