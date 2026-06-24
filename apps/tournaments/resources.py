@@ -113,8 +113,9 @@ class TournamentResource(resources.ModelResource):
         skip_unchanged = True
         report_skipped = True
         # Whitelist + column order. `series_master`, `created_at`, `updated_at`
-        # are intentionally excluded. `buy_in_total`, `is_bounty`, `early_bird`,
-        # `verified_by_admin` are exported for visibility but recomputed on import.
+        # and `verified_by_admin` are intentionally excluded. `buy_in_total`,
+        # `is_bounty`, `early_bird` are exported for visibility but recomputed on
+        # import; `verified_by_admin` is recomputed too but never shown.
         fields = (
             "id",
             "room",
@@ -151,7 +152,6 @@ class TournamentResource(resources.ModelResource):
             "is_bounty",
             "bounty_type",
             "min_bounty",
-            "verified_by_admin",
         )
         export_order = fields
 
