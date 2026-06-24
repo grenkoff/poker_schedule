@@ -4,11 +4,13 @@
 or attach dropdowns. So this format runs the tablib output back through openpyxl
 to add two editor affordances, then hands the bytes onward unchanged:
 
-* The ``id`` column and the header row are locked (sheet protection on, every
-  other cell — plus a buffer of empty rows for new tournaments — left editable).
-  ``id`` is the import match key (see ``TournamentResource.import_id_fields``);
-  hand-editing it silently overwrites the wrong row, and renaming a header
-  breaks the column→field mapping, so both are made read-only.
+* The ``id`` column, the columns recomputed on import (``buy_in_total``,
+  ``is_bounty``, ``early_bird``, ``verified_by_admin``), and the header row are
+  locked (sheet protection on, every other cell — plus a buffer of empty rows
+  for new tournaments — left editable). ``id`` is the import match key (see
+  ``TournamentResource.import_id_fields``) so hand-editing it silently
+  overwrites the wrong row; the computed columns are overwritten on import so
+  editing them has no effect; renaming a header breaks the column→field mapping.
 * Columns backed by a fixed option set get a data-validation dropdown listing the
   exact strings import accepts — FK columns export the option ``name`` slug,
   ``game_type`` exports the choice code. The option values live on a hidden
@@ -36,6 +38,15 @@ _DROPDOWN_COLUMNS = (
     "bounty_type",
     "early_bird_type",
     "deal_making",
+)
+
+# Columns recomputed on import (see TournamentResource.before_save_instance), so
+# hand-editing them has no effect — lock them alongside `id` to make that clear.
+_COMPUTED_COLUMNS = (
+    "buy_in_total",
+    "is_bounty",
+    "early_bird",
+    "verified_by_admin",
 )
 
 # Extra empty rows below the data kept editable (and dropdown-equipped) so an
@@ -108,15 +119,14 @@ def _harden_workbook(content: bytes) -> bytes:
         target_letter = get_column_letter(target_col)
         dv.add(f"{target_letter}2:{target_letter}{last_row}")
 
-    # --- lock id + header, leave everything else editable ----------------
-    id_col = col_of.get("id")
+    # --- lock id + computed columns + header, leave the rest editable ----
+    locked_cols = {col_of[name] for name in ("id", *_COMPUTED_COLUMNS) if name in col_of}
     unlocked = Protection(locked=False)
     locked = Protection(locked=True)
     for row in range(1, last_row + 1):
         for col in range(1, len(headers) + 1):
-            is_header = row == 1
-            is_id = col == id_col
-            ws.cell(row=row, column=col).protection = locked if (is_header or is_id) else unlocked
+            is_locked = row == 1 or col in locked_cols
+            ws.cell(row=row, column=col).protection = locked if is_locked else unlocked
     ws.protection.sheet = True
 
     out = BytesIO()

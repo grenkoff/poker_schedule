@@ -208,6 +208,11 @@ def test_export_locks_id_and_adds_dropdowns(superuser, series):
     assert ws.cell(row=1, column=room_col).protection.locked is True
     assert ws.cell(row=2, column=room_col).protection.locked is False
 
+    # Columns recomputed on import are locked too — editing them has no effect.
+    for computed in ("buy_in_total", "is_bounty", "early_bird", "verified_by_admin"):
+        col = headers.index(computed) + 1
+        assert ws.cell(row=2, column=col).protection.locked is True, computed
+
     # The option columns carry a list validation pointing at the hidden sheet.
     assert "lists" in wb.sheetnames
     assert wb["lists"].sheet_state == "hidden"
