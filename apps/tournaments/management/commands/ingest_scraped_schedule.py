@@ -50,11 +50,13 @@ from typing import Any
 import tablib
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.utils import timezone
 from import_export.results import RowResult
 
 from apps.tournaments.models import (
     BlindLevelTemplate,
     BlindStructureTemplate,
+    ScrapeRun,
     Tournament,
     auto_template_name,
     blind_signature,
@@ -87,6 +89,10 @@ class Command(BaseCommand):
         dry_run = not apply
 
         data = self._load(path)
+        # Stamp the run before importing so the rows it touches get a
+        # `last_seen_at` strictly after this; the difference is what flags
+        # masters that dropped out of the feed (see MissingFromLastScrapeFilter).
+        started = timezone.now()
 
         resource = ScrapedTournamentResource()
         field_order = list(resource._meta.fields)
@@ -114,7 +120,22 @@ class Command(BaseCommand):
                 else "Dry run found errors — fix the feed before applying."
             )
 
-        self._report_unseen(feed_keys)
+        unseen = self._unseen(feed_keys)
+        self._report_unseen(unseen)
+
+        if apply:
+            ScrapeRun.objects.create(
+                started_at=started,
+                feed_size=len(data),
+                created=result.totals[RowResult.IMPORT_TYPE_NEW],
+                updated=result.totals[RowResult.IMPORT_TYPE_UPDATE],
+                unchanged=result.totals[RowResult.IMPORT_TYPE_SKIP],
+                errored=(
+                    result.totals[RowResult.IMPORT_TYPE_ERROR]
+                    + result.totals[RowResult.IMPORT_TYPE_INVALID]
+                ),
+                missing_from_feed=len(unseen),
+            )
 
     # --- helpers ---------------------------------------------------------
 
@@ -207,8 +228,9 @@ class Command(BaseCommand):
             for err in row.errors:
                 self.stderr.write(self.style.ERROR(f"  row {row.number}: {err.error}"))
 
-    def _report_unseen(self, feed_keys: set[str]) -> None:
-        unseen = list(
+    def _unseen(self, feed_keys: set[str]) -> list[tuple[str | None, str]]:
+        """Scraped masters absent from this feed — candidates for removal."""
+        return list(
             Tournament.objects.filter(
                 source=Tournament.Source.SCRAPED,
                 series_master__isnull=True,
@@ -216,6 +238,8 @@ class Command(BaseCommand):
             .exclude(external_key__in=feed_keys)
             .values_list("external_key", "name")
         )
+
+    def _report_unseen(self, unseen: list[tuple[str | None, str]]) -> None:
         if not unseen:
             return
         self.stdout.write(

@@ -34,6 +34,7 @@ from .models import (
     EarlyBirdType,
     Periodicity,
     ReEntryOption,
+    ScrapeRun,
     Tournament,
     TournamentSeries,
     auto_template_name,
@@ -126,6 +127,31 @@ class BlindStructureTemplateAdmin(StaffAdminMixin, admin.ModelAdmin):
             )
 
 
+class MissingFromLastScrapeFilter(admin.SimpleListFilter):
+    """Surface scraped masters that dropped out of the latest ingest feed.
+
+    "Stale" means the row's `last_seen_at` predates the most recent ScrapeRun —
+    i.e. the scraper didn't see it last time, so it's a removal candidate the
+    editor should review (we never delete automatically).
+    """
+
+    title = _("scrape freshness")
+    parameter_name = "scrape_stale"
+
+    def lookups(self, request, model_admin):
+        return (("stale", _("Missing from last scrape")),)
+
+    def queryset(self, request, queryset):
+        if self.value() != "stale":
+            return queryset
+        latest = ScrapeRun.objects.order_by("-started_at").first()
+        if latest is None:
+            return queryset.none()
+        return queryset.filter(source=Tournament.Source.SCRAPED).filter(
+            Q(last_seen_at__isnull=True) | Q(last_seen_at__lt=latest.started_at)
+        )
+
+
 @admin.register(Tournament)
 class TournamentAdmin(ImportExportMixin, StaffAdminMixin, admin.ModelAdmin):
     form = TournamentAdminForm
@@ -162,7 +188,9 @@ class TournamentAdmin(ImportExportMixin, StaffAdminMixin, admin.ModelAdmin):
         "periodicity",
         "weekdays_display",
         "verified_by_admin",
+        "source",
     )
+    list_filter = (MissingFromLastScrapeFilter, "source")
     list_select_related = ("room", "series", "periodicity")
     ordering = ("name",)
     sortable_by = ("name",)  # only Name is sortable; all other headers are plain
@@ -689,3 +717,23 @@ class TournamentSeriesAdmin(StaffAdminMixin, admin.ModelAdmin):
     autocomplete_fields = ("room",)
     ordering = ("room__name", "sort_order", "name")
     fields = ("room", "name", "slug", "image", "sort_order")
+
+
+@admin.register(ScrapeRun)
+class ScrapeRunAdmin(StaffAdminMixin, admin.ModelAdmin):
+    """Read-only history of `ingest_scraped_schedule` runs (review surface)."""
+
+    list_display = (
+        "started_at",
+        "feed_size",
+        "created",
+        "updated",
+        "unchanged",
+        "errored",
+        "missing_from_feed",
+    )
+    ordering = ("-started_at",)
+    readonly_fields = list_display
+
+    def has_add_permission(self, request) -> bool:
+        return False  # runs are recorded by the ingest command, never by hand

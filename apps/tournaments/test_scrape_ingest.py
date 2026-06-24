@@ -15,7 +15,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from apps.rooms.models import PokerRoom
-from apps.tournaments.models import Tournament, TournamentSeries
+from apps.tournaments.models import ScrapeRun, Tournament, TournamentSeries
 
 EXTERNAL_KEY = "pokerok|scrape-test-daily|every_24_hours|127"
 
@@ -128,6 +128,32 @@ def test_unseen_master_reported_for_review(tmp_path, series):
     assert "Scrape Test Daily $25" in out
     # Not auto-deleted — left for the human to review.
     assert Tournament.objects.filter(external_key=EXTERNAL_KEY).exists()
+
+
+@pytest.mark.django_db
+def test_apply_records_scrape_run(tmp_path, series):
+    _ingest(_write_feed(tmp_path, [_feed_item(series)]), apply=True)
+
+    run = ScrapeRun.objects.latest("started_at")
+    assert run.feed_size == 1
+    assert run.created == 1
+    assert run.missing_from_feed == 0
+
+
+@pytest.mark.django_db
+def test_dry_run_records_no_run(tmp_path, series):
+    _ingest(_write_feed(tmp_path, [_feed_item(series)]), apply=False)
+    assert ScrapeRun.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_stale_master_shown_under_admin_filter(admin_client, tmp_path, series):
+    _ingest(_write_feed(tmp_path, [_feed_item(series)]), apply=True)
+    _ingest(_write_feed(tmp_path, []), apply=True)  # later feed drops it → stale
+
+    resp = admin_client.get("/admin/tournaments/tournament/?scrape_stale=stale")
+    assert resp.status_code == 200
+    assert b"Scrape Test Daily $25" in resp.content
 
 
 @pytest.mark.django_db

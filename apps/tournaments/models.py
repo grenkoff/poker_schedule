@@ -573,3 +573,29 @@ models.signals.post_save.connect(_invalidate_signature_cache, sender=BlindStruct
 models.signals.post_delete.connect(_invalidate_signature_cache, sender=BlindStructureTemplate)
 models.signals.post_save.connect(_invalidate_signature_cache, sender=BlindLevelTemplate)
 models.signals.post_delete.connect(_invalidate_signature_cache, sender=BlindLevelTemplate)
+
+
+class ScrapeRun(models.Model):
+    """One applied run of `ingest_scraped_schedule` — a log of what the PokerOK
+    schedule ingest did.
+
+    `started_at` is the reference clock for removal detection: a scraped master
+    whose `last_seen_at` predates the latest run's `started_at` wasn't in that
+    feed, so the admin flags it for review (see `MissingFromLastScrapeFilter`).
+    """
+
+    started_at = models.DateTimeField(_("started at"))
+    feed_size = models.PositiveIntegerField(_("items in feed"), default=0)
+    created = models.PositiveIntegerField(_("created"), default=0)
+    updated = models.PositiveIntegerField(_("updated"), default=0)
+    unchanged = models.PositiveIntegerField(_("unchanged"), default=0)
+    errored = models.PositiveIntegerField(_("with errors"), default=0)
+    missing_from_feed = models.PositiveIntegerField(_("missing from feed"), default=0)
+
+    class Meta:
+        verbose_name = _("scrape run")
+        verbose_name_plural = _("scrape runs")
+        ordering = ("-started_at",)
+
+    def __str__(self) -> str:
+        return f"Scrape {self.started_at:%Y-%m-%d %H:%M} (+{self.created} / ~{self.updated})"
