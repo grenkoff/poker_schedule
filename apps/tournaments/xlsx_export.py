@@ -1,16 +1,15 @@
 """Custom XLSX export format that hardens the hand-editable tournament file.
 
-`django-import-export` produces a plain xlsx via tablib; tablib can't lock cells
+`django-import-export` produces a plain xlsx via tablib; tablib can't shade cells
 or attach dropdowns. So this format runs the tablib output back through openpyxl
-to add two editor affordances, then hands the bytes onward unchanged:
+to add editor affordances, then hands the bytes onward unchanged:
 
-* The ``id`` column, the columns recomputed on import (``buy_in_total``,
-  ``is_bounty``, ``early_bird``), and the header row are locked (sheet protection
-  on, every other cell — plus a buffer of empty rows for new tournaments — left
-  editable). ``id`` is the import match key (see
-  ``TournamentResource.import_id_fields``) so hand-editing it silently
-  overwrites the wrong row; the computed columns are overwritten on import so
-  editing them has no effect; renaming a header breaks the column→field mapping.
+* The sheet is protected with ``id``, the recomputed columns (``buy_in_total``,
+  ``is_bounty``, ``early_bird``) and the header row locked (and shaded grey),
+  every other cell editable. ``id`` is the import match key; the others are
+  overwritten on import. AutoFilter is left enabled so columns can be *filtered*
+  (sorting stays blocked — it would move the locked cells, which protection
+  forbids); the header row is frozen.
 * Columns backed by a fixed option set get a data-validation dropdown listing the
   exact strings import accepts — FK columns export the option ``name`` slug,
   ``game_type`` exports the choice code. The option values live on a hidden
@@ -19,8 +18,10 @@ to add two editor affordances, then hands the bytes onward unchanged:
   gets a named range over its series on the helper sheet and the series cell
   validates against ``INDIRECT(<room cell>)``, so it stays empty until a room is
   picked and then offers only that room's series.
-* Read-only columns are shaded grey, each header carries a hover note, and a
-  visible "Инструкция" sheet spells out the legend for whoever fills the file.
+* Each header carries a hover note explaining how to fill it.
+
+Columns are headed with the admin-form labels (`COLUMN_LABELS` in `resources`);
+this module maps field names to those labels to locate each column.
 
 Import is untouched: the parsing path (`create_dataset`) ignores protection,
 validation, fills and extra sheets, so a file produced here round-trips through
@@ -53,6 +54,7 @@ _DROPDOWN_COLUMNS = (
     "bounty_type",
     "early_bird_type",
     "deal_making",
+    "blind_structure",
 )
 
 # Columns recomputed on import (see TournamentResource.before_save_instance), so
@@ -81,6 +83,7 @@ def _dropdown_options() -> dict[str, list[str]]:
     from apps.rooms.models import PokerRoom
 
     from .models import (
+        BlindStructureTemplate,
         BountyOption,
         BubbleOption,
         DealMakingOption,
@@ -102,6 +105,9 @@ def _dropdown_options() -> dict[str, list[str]]:
         "bounty_type": _names(BountyOption),
         "early_bird_type": _names(EarlyBirdType),
         "deal_making": _names(DealMakingOption),
+        "blind_structure": list(
+            BlindStructureTemplate.objects.order_by("name").values_list("name", flat=True)
+        ),
     }
 
 
@@ -140,25 +146,32 @@ def _harden_workbook(content: bytes) -> bytes:
     from openpyxl.utils import get_column_letter
     from openpyxl.worksheet.datavalidation import DataValidation
 
+    from .resources import COLUMN_LABELS
+
     wb = openpyxl.load_workbook(BytesIO(content))
     ws = wb.active
 
     headers = [cell.value for cell in ws[1]]
-    col_of = {name: idx + 1 for idx, name in enumerate(headers) if name}
-    last_row = ws.max_row + _EXTRA_ROWS
+    label_to_idx = {name: idx + 1 for idx, name in enumerate(headers) if name}
+    data_last_row = ws.max_row  # real rows (header + data), for the autofilter
+    last_row = ws.max_row + _EXTRA_ROWS  # +buffer so dropdowns reach new rows
+
+    def col_of(field_name):
+        # Columns carry admin labels now; map a field name to its column index.
+        return label_to_idx.get(COLUMN_LABELS.get(field_name, field_name))
 
     # --- dropdowns on closed-set columns ---------------------------------
     options = _dropdown_options()
     lists = wb.create_sheet("lists")
     lists.sheet_state = "hidden"
     next_list_col = 1  # next free column on the hidden helper sheet
-    for column_name in _DROPDOWN_COLUMNS:
-        values = options.get(column_name)
-        target_col = col_of.get(column_name)
+    for field_name in _DROPDOWN_COLUMNS:
+        values = options.get(field_name)
+        target_col = col_of(field_name)
         if not values or not target_col:
             continue
         letter = get_column_letter(next_list_col)
-        lists.cell(row=1, column=next_list_col, value=column_name)
+        lists.cell(row=1, column=next_list_col, value=field_name)
         for offset, value in enumerate(values, start=2):
             lists.cell(row=offset, column=next_list_col, value=value)
         ref = f"lists!${letter}$2:${letter}${len(values) + 1}"
@@ -169,8 +182,8 @@ def _harden_workbook(content: bytes) -> bytes:
         next_list_col += 1
 
     # --- cascading series dropdown, scoped to the row's room -------------
-    series_col = col_of.get("series")
-    room_col = col_of.get("room")
+    series_col = col_of("series")
+    room_col = col_of("room")
     if series_col and room_col:
         from openpyxl.workbook.defined_name import DefinedName
 
@@ -196,9 +209,12 @@ def _harden_workbook(content: bytes) -> bytes:
         ws.add_data_validation(series_dv)
         series_dv.add(f"{series_letter}2:{series_letter}{last_row}")
 
-    # --- lock id + computed columns + header, grey-shade read-only cols --
-    locked_cols = {col_of[name] for name in ("id", *_COMPUTED_COLUMNS) if name in col_of}
+    # --- lock id + computed + header; grey-shade those read-only columns -
+    # Sheet protection keeps the import key (id) and the recomputed columns
+    # read-only, every other cell (plus the empty-row buffer) editable.
     grey = PatternFill(start_color=_LOCKED_FILL, end_color=_LOCKED_FILL, fill_type="solid")
+    locked_cols = {col_of(name) for name in ("id", *_COMPUTED_COLUMNS)}
+    locked_cols.discard(None)
     unlocked = Protection(locked=False)
     locked = Protection(locked=True)
     for row in range(1, last_row + 1):
@@ -209,6 +225,10 @@ def _harden_workbook(content: bytes) -> bytes:
             if in_locked_col:
                 cell.fill = grey
     ws.protection.sheet = True
+    # Allow filtering on the protected sheet (sorting stays blocked — it would
+    # move the locked id/computed cells, which protection forbids).
+    ws.protection.autoFilter = False
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{data_last_row}"
     ws.freeze_panes = "A2"  # keep headers visible while scrolling
 
     # --- per-header hover notes ------------------------------------------
@@ -221,20 +241,23 @@ def _harden_workbook(content: bytes) -> bytes:
     )
     notes["id"] = (
         "Только чтение. Оставьте пустым для нового турнира; "
-        "заполненный id обновляет существующий турнир."
+        "заполненный ID обновляет существующий турнир."
     )
     notes["series"] = (
-        "Сначала выберите room — затем здесь появится список серий этой комнаты. "
-        "Пока room пустой, список недоступен."
+        "Сначала выберите Room — затем здесь появится список серий этой комнаты. "
+        "Пока Room пустой, список недоступен."
+    )
+    notes["blind_structure"] = (
+        "Выберите название структуры блайндов из списка. При импорте её уровни "
+        "подставятся в турнир автоматически."
     )
     notes["starting_time"] = "Формат: ГГГГ-ММ-ДД ЧЧ:ММ, например 2026-06-22 19:30."
     notes["late_reg_at"] = notes["starting_time"]
-    for name, text in notes.items():
-        header_col = col_of.get(name)
+    for field_name, text in notes.items():
+        header_col = col_of(field_name)
         if header_col:
             ws.cell(row=1, column=header_col).comment = Comment(text, "schedule")
 
-    _add_instruction_sheet(wb)
     wb.active = wb.index(ws)  # data sheet stays active so import reads it
 
     out = BytesIO()
@@ -242,71 +265,8 @@ def _harden_workbook(content: bytes) -> bytes:
     return out.getvalue()
 
 
-def _add_instruction_sheet(wb) -> None:
-    """A visible "Инструкция" sheet with the legend for whoever fills the file."""
-    from openpyxl.styles import Alignment, Font
-
-    # (text, is_heading) — blank strings are spacer rows.
-    lines: list[tuple[str, bool]] = [
-        ("Как заполнять таблицу турниров", True),
-        ("", False),
-        (
-            "Каждая строка — один турнир. Чтобы добавить турниры, дописывайте строки "
-            "вниз (ниже уже подготовлены пустые строки со списками).",
-            False,
-        ),
-        ("", False),
-        ("Серый фон = только для чтения.", True),
-        (
-            "Серые колонки (id, buy_in_total, is_bounty, early_bird) заблокированы "
-            "и заполняются автоматически — менять их вручную бесполезно.",
-            False,
-        ),
-        ("", False),
-        ("Колонка id", True),
-        (
-            "Оставьте пустой — будет создан новый турнир. Если id заполнен, обновится "
-            "существующий турнир с этим id. Не вписывайте id вручную.",
-            False,
-        ),
-        ("", False),
-        ("Колонки с выпадающим списком", True),
-        (
-            "room, game_type, re_entry, bubble, periodicity, bounty_type, early_bird_type, "
-            "deal_making — выбирайте значение из списка, не вводите вручную.",
-            False,
-        ),
-        ("", False),
-        ("series", True),
-        (
-            "Зависит от room: сначала выберите комнату — затем в series появится "
-            "список серий этой комнаты. Пока room пустой, выбор серии недоступен.",
-            False,
-        ),
-        ("", False),
-        ("Дата и время (starting_time, late_reg_at)", True),
-        ("Формат ГГГГ-ММ-ДД ЧЧ:ММ, например 2026-06-22 19:30.", False),
-        ("", False),
-        ("Деньги (buy_in_without_rake, bounty_buyin, rake)", True),
-        ("Указывайте в долларах. buy_in_total считается автоматически как их сумма.", False),
-        ("", False),
-        (
-            "Остальные колонки заполняйте вручную. Не переименовывайте заголовки — "
-            "по ним идёт импорт.",
-            False,
-        ),
-    ]
-    sheet = wb.create_sheet("Инструкция", 1)  # second tab, right after the data
-    for idx, (text, is_heading) in enumerate(lines, start=1):
-        cell = sheet.cell(row=idx, column=1, value=text)
-        cell.alignment = Alignment(wrap_text=True, vertical="top")
-        if is_heading:
-            cell.font = Font(bold=True)
-    sheet.column_dimensions["A"].width = 100
-
-
 class LockedDropdownXLSX(base_formats.XLSX):
-    """XLSX export with a locked ``id``/header and option dropdowns.
+    """XLSX export with locked read-only columns, filtering and option dropdowns.
 
     Inherits the import path unchanged; only the export bytes are reworked.
     """

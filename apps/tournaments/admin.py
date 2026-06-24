@@ -12,6 +12,7 @@ from django.utils.formats import date_format
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from import_export.admin import ImportExportMixin
+from import_export.results import RowResult
 
 from apps.users.admin_mixins import StaffAdminMixin
 
@@ -444,6 +445,24 @@ class TournamentAdmin(ImportExportMixin, StaffAdminMixin, admin.ModelAdmin):
 
     def has_export_permission(self, request) -> bool:
         return bool(request.user and request.user.is_staff)
+
+    def add_success_message(self, result, request):
+        # Report what the import actually did: created / updated / deleted, plus
+        # any unchanged rows it skipped. Replaces the library's generic message.
+        created = result.totals[RowResult.IMPORT_TYPE_NEW]
+        updated = result.totals[RowResult.IMPORT_TYPE_UPDATE]
+        deleted = result.totals[RowResult.IMPORT_TYPE_DELETE]
+        skipped = result.totals[RowResult.IMPORT_TYPE_SKIP]
+        msg = _(
+            "Import finished: %(created)d created, %(updated)d updated, %(deleted)d deleted."
+        ) % {
+            "created": created,
+            "updated": updated,
+            "deleted": deleted,
+        }
+        if skipped:
+            msg += " " + _("%(skipped)d unchanged row(s) skipped.") % {"skipped": skipped}
+        messages.success(request, msg)
 
     def get_import_resource_kwargs(self, request, **kwargs):
         kwargs = super().get_import_resource_kwargs(request, **kwargs)

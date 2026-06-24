@@ -3,9 +3,10 @@
 Foreign keys are matched on the human-readable values editors actually type in
 the spreadsheet (room/series names, option slugs) rather than database ids, so a
 file can be hand-filled without looking anything up. The derived columns the admin
-form normally computes (`buy_in_total`, `is_bounty`, `early_bird`, `verified_by_admin`)
-are recomputed on import in `before_save_instance` — see `TournamentAdminForm` —
-instead of being trusted from the cell.
+form normally computes (`buy_in_total`, `is_bounty`, `early_bird`, plus the unexported
+`verified_by_admin`) are recomputed on import in `before_save_instance` — see
+`TournamentAdminForm` — instead of being trusted from the cell. Columns carry the
+admin-form labels (`COLUMN_LABELS`), which also define the accepted import format.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from import_export.widgets import DateTimeWidget, ForeignKeyWidget
 from apps.rooms.models import PokerRoom
 
 from .models import (
+    BlindStructureTemplate,
     BountyOption,
     BubbleOption,
     DealMakingOption,
@@ -26,9 +28,55 @@ from .models import (
     ReEntryOption,
     Tournament,
     TournamentSeries,
+    blind_signature,
+    template_id_for_signature,
 )
 
 _DT_FORMAT = "%Y-%m-%d %H:%M"
+
+# Human-readable column headers, matching the tournament admin form labels so the
+# spreadsheet reads like the change page rather than like model attributes. These
+# double as the import contract: a file must carry exactly these headers (see
+# `TournamentResource.before_import`). The two computed booleans get a "(computed)"
+# suffix because they'd otherwise collide with their `*_type` siblings' labels.
+COLUMN_LABELS = {
+    "id": "ID",
+    "room": "Room",
+    "series": "Tournament series",
+    "name": "Name",
+    "game_type": "Game type",
+    "buy_in_total": "Buy-in (with rake), $",
+    "buy_in_without_rake": "Buy-in to prize pool, $",
+    "bounty_buyin": "Buy-in to bounty pool, $",
+    "rake": "Rake, $",
+    "guaranteed_dollars": "Guaranteed prize pool, $",
+    "payout_percent": "Payout distribution, %",
+    "starting_stack": "Starting chips",
+    "starting_stack_bb": "Starting chips, BB",
+    "timezone": "Timezone",
+    "starting_time": "Starting time",
+    "late_registration_available": "Late registration available",
+    "late_reg_at": "Late registration closes at",
+    "late_reg_level": "Late registration level",
+    "blind_interval_minutes": "Blind interval, min",
+    "break_minutes": "Break time, min",
+    "players_per_table": "Players per table",
+    "players_at_final_table": "Players at the final table",
+    "min_players": "Min players",
+    "max_players": "Max players",
+    "re_entry": "Re-entry",
+    "bubble": "Bubble",
+    "periodicity": "Periodicity",
+    "weekdays": "Active weekdays",
+    "early_bird": "Early bird (computed)",
+    "early_bird_type": "Early bird",
+    "featured_final_table": "Featured final table",
+    "deal_making": "Deal making",
+    "is_bounty": "Bounty (computed)",
+    "bounty_type": "Bounty",
+    "min_bounty": "Minimum bounty, $",
+    "blind_structure": "Blind structure",
+}
 
 
 class SeriesWidget(ForeignKeyWidget):
@@ -45,13 +93,34 @@ class SeriesWidget(ForeignKeyWidget):
     def clean(self, value, row=None, **kwargs):
         if value in (None, ""):
             return None
-        room_name = (row or {}).get("room")
+        # Rows are keyed by column header (the admin label), not field name.
+        room_name = (row or {}).get(COLUMN_LABELS["room"])
         qs = self.model.objects.filter(name=value)
         if room_name:
             qs = qs.filter(room__name=room_name)
         obj = qs.first()
         if obj is None:
             raise ValueError(f"Tournament series '{value}' not found for room '{room_name}'.")
+        return obj
+
+
+class BlindStructureWidget(ForeignKeyWidget):
+    """Resolve a `BlindStructureTemplate` by its name for import.
+
+    Used only on the import side: a recognised name lets the import apply that
+    template's levels to the tournament (see `TournamentResource`). Export fills
+    the column via `dehydrate_blind_structure` instead.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(BlindStructureTemplate, field="name")
+
+    def clean(self, value, row=None, **kwargs):
+        if value in (None, ""):
+            return None
+        obj = self.model.objects.filter(name=value).first()
+        if obj is None:
+            raise ValueError(f"Blind structure '{value}' not found.")
         return obj
 
 
@@ -102,10 +171,38 @@ class TournamentResource(resources.ModelResource):
         column_name="late_reg_at",
         widget=DateTimeWidget(format=_DT_FORMAT),
     )
+    # Not a model field: import sets it to the resolved template (transient attr)
+    # and `after_save_instance` copies its levels onto the tournament; export
+    # fills the cell from the matching template name via `dehydrate_blind_structure`.
+    blind_structure = fields.Field(
+        attribute="blind_structure",
+        column_name="blind_structure",
+        widget=BlindStructureWidget(),
+    )
 
     def __init__(self, user=None, **kwargs):
         super().__init__(**kwargs)
         self._user = user
+        self._template_name_cache: dict[int, str] | None = None
+        # Relabel every column with its admin-form header (used for both the
+        # export header row and import column matching).
+        for field_name, label in COLUMN_LABELS.items():
+            if field_name in self.fields:
+                self.fields[field_name].column_name = label
+
+    def before_import(self, dataset, **kwargs):
+        # Reject files that aren't a tournament export: every expected header
+        # must be present. Surfaces as a clear error on the import preview page
+        # instead of a cryptic per-row failure deep in the mapping.
+        super().before_import(dataset, **kwargs)
+        required = {self.fields[name].column_name for name in self._meta.fields}
+        missing = required - set(dataset.headers or [])
+        if missing:
+            raise ValueError(
+                "This file does not match the tournament export format. "
+                "Missing columns: " + ", ".join(sorted(missing)) + ". "
+                "Export the tournaments first and fill in that file."
+            )
 
     class Meta:
         model = Tournament
@@ -152,6 +249,7 @@ class TournamentResource(resources.ModelResource):
             "is_bounty",
             "bounty_type",
             "min_bounty",
+            "blind_structure",
         )
         export_order = fields
 
@@ -168,3 +266,35 @@ class TournamentResource(resources.ModelResource):
         # Match TournamentAdmin.save_model: only a superuser's edits are trusted
         # as verified.
         instance.verified_by_admin = bool(self._user and self._user.is_superuser)
+
+    def after_save_instance(self, instance, row, **kwargs):
+        # The blind-structure column resolves to a template (transient attr set
+        # by the field's widget). Copy its levels onto the now-saved tournament,
+        # mirroring TournamentAdmin's "apply template" path. Skipped on dry-run,
+        # when the instance may not be persisted.
+        if kwargs.get("dry_run"):
+            return
+        template = getattr(instance, "blind_structure", None)
+        if template is not None:
+            template.apply_to(instance)
+
+    def dehydrate_blind_structure(self, obj) -> str:
+        # Export the name of the template matching the tournament's current
+        # blind levels (every saved structure is auto-registered as a template,
+        # so this normally resolves). Blank when there are no levels / no match.
+        if not obj.pk:
+            return ""
+        rows = list(obj.blind_levels.all())
+        if not rows:
+            return ""
+        tpl_id = template_id_for_signature(blind_signature(rows))
+        if tpl_id is None:
+            return ""
+        return self._template_names().get(tpl_id, "")
+
+    def _template_names(self) -> dict[int, str]:
+        if self._template_name_cache is None:
+            self._template_name_cache = dict(
+                BlindStructureTemplate.objects.values_list("id", "name")
+            )
+        return self._template_name_cache
