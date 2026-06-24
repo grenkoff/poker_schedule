@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from django.utils import timezone
 from import_export import fields, resources
 from import_export.widgets import DateTimeWidget, ForeignKeyWidget
 
@@ -31,6 +32,7 @@ from .models import (
     blind_signature,
     template_id_for_signature,
 )
+from .recurrence import regenerate_series
 
 _DT_FORMAT = "%Y-%m-%d %H:%M"
 
@@ -213,7 +215,9 @@ class TournamentResource(resources.ModelResource):
         # and `verified_by_admin` are intentionally excluded. `buy_in_total`,
         # `is_bounty`, `early_bird` are exported for visibility but recomputed on
         # import; `verified_by_admin` is recomputed too but never shown.
-        fields = (
+        # Annotated tuple[str, ...] so subclasses (ScrapedTournamentResource) can
+        # override with a different-length tuple without a mypy type clash.
+        fields: tuple[str, ...] = (
             "id",
             "room",
             "series",
@@ -298,3 +302,41 @@ class TournamentResource(resources.ModelResource):
                 BlindStructureTemplate.objects.values_list("id", "name")
             )
         return self._template_name_cache
+
+
+class ScrapedTournamentResource(TournamentResource):
+    """Import resource for the automated PokerOK scrape pipeline.
+
+    Matches rows on `external_key` (a stable signature of the recurring
+    definition) instead of `id`, so re-ingesting the schedule updates the same
+    master rather than creating duplicates. It also does the bits the admin
+    normally does on save: marks the row scraped, stamps `last_seen_at`, and
+    regenerates the recurring children of a master.
+    """
+
+    external_key = fields.Field(attribute="external_key", column_name="External key")
+
+    class Meta(TournamentResource.Meta):
+        import_id_fields = ("external_key",)
+        # Same columns as the manual resource, but matched on external_key, not id.
+        fields = ("external_key", *(f for f in TournamentResource.Meta.fields if f != "id"))
+        export_order = fields
+
+    def before_save_instance(self, instance, row, **kwargs):
+        super().before_save_instance(instance, row, **kwargs)
+        instance.source = Tournament.Source.SCRAPED
+        instance.last_seen_at = timezone.now()
+
+    def after_save_instance(self, instance, row, **kwargs):
+        # super() applies the blind-structure template (skipped on dry-run).
+        super().after_save_instance(instance, row, **kwargs)
+        if kwargs.get("dry_run"):
+            return
+        # A recurring master must (re)materialize its children, mirroring
+        # TournamentAdmin.save_related — the import path doesn't do this itself.
+        if (
+            instance.series_master_id is None
+            and instance.periodicity_id
+            and instance.periodicity.interval_seconds > 0
+        ):
+            regenerate_series(instance)

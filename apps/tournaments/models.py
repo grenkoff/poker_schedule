@@ -334,6 +334,35 @@ class Tournament(models.Model):
     # --- workflow (kept from before) ------------------------------------
     verified_by_admin = models.BooleanField(_("verified by superadmin"), default=False)
 
+    # --- provenance / automated ingest ----------------------------------
+    # How the row entered the DB. Scraped rows are matched on `external_key`
+    # (a stable signature of the recurring definition) so re-ingesting the
+    # PokerOK schedule updates the same master instead of creating duplicates.
+    class Source(models.TextChoices):
+        MANUAL = "manual", _("Manual")
+        SCRAPED = "scraped", _("Scraped")
+
+    source = models.CharField(
+        _("source"),
+        max_length=16,
+        choices=Source.choices,
+        default=Source.MANUAL,
+    )
+    external_key = models.CharField(
+        _("external key"),
+        max_length=255,
+        null=True,
+        blank=True,
+        unique=True,
+        help_text=_(
+            "Stable signature of a scraped recurring definition; the import match key "
+            "for the scrape pipeline. Empty for manually-entered tournaments."
+        ),
+    )
+    # Set on every ingest run; lets the reconciler flag scraped masters that
+    # dropped out of the latest PokerOK feed (see Phase 2 removal detection).
+    last_seen_at = models.DateTimeField(_("last seen in feed"), null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
