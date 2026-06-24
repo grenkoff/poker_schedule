@@ -213,6 +213,10 @@ def test_export_locks_id_and_adds_dropdowns(superuser, series):
         col = headers.index(computed) + 1
         assert ws.cell(row=2, column=col).protection.locked is True, computed
 
+    # Read-only columns are grey-shaded; editable ones aren't.
+    assert ws.cell(row=2, column=id_col).fill.fill_type == "solid"
+    assert ws.cell(row=2, column=room_col).fill.fill_type in (None, "none")
+
     # The option columns carry a list validation pointing at the hidden sheet.
     assert "lists" in wb.sheetnames
     assert wb["lists"].sheet_state == "hidden"
@@ -220,6 +224,13 @@ def test_export_locks_id_and_adds_dropdowns(superuser, series):
     from openpyxl.utils import get_column_letter
 
     assert get_column_letter(room_col) in validated_ranges
+
+    # A visible legend sheet ships with the file, but the data sheet stays active.
+    assert "Инструкция" in wb.sheetnames
+    assert wb["Инструкция"].sheet_state == "visible"
+    assert ws.title not in ("lists", "Инструкция")
+    # Headers carry hover notes for the editor.
+    assert ws.cell(row=1, column=room_col).comment is not None
 
 
 @pytest.mark.django_db
