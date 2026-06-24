@@ -3,9 +3,10 @@
 Foreign keys are matched on the human-readable values editors actually type in
 the spreadsheet (room/series names, option slugs) rather than database ids, so a
 file can be hand-filled without looking anything up. The derived columns the admin
-form normally computes (`buy_in_total`, `is_bounty`, `early_bird`, `verified_by_admin`)
-are recomputed on import in `before_save_instance` — see `TournamentAdminForm` —
-instead of being trusted from the cell.
+form normally computes (`buy_in_total`, `is_bounty`, `early_bird`, plus the unexported
+`verified_by_admin`) are recomputed on import in `before_save_instance` — see
+`TournamentAdminForm` — instead of being trusted from the cell. Columns carry the
+admin-form labels (`COLUMN_LABELS`), which also define the accepted import format.
 """
 
 from __future__ import annotations
@@ -33,6 +34,50 @@ from .models import (
 
 _DT_FORMAT = "%Y-%m-%d %H:%M"
 
+# Human-readable column headers, matching the tournament admin form labels so the
+# spreadsheet reads like the change page rather than like model attributes. These
+# double as the import contract: a file must carry exactly these headers (see
+# `TournamentResource.before_import`). The two computed booleans get a "(computed)"
+# suffix because they'd otherwise collide with their `*_type` siblings' labels.
+COLUMN_LABELS = {
+    "id": "ID",
+    "room": "Room",
+    "series": "Tournament series",
+    "name": "Name",
+    "game_type": "Game type",
+    "buy_in_total": "Buy-in (with rake), $",
+    "buy_in_without_rake": "Buy-in to prize pool, $",
+    "bounty_buyin": "Buy-in to bounty pool, $",
+    "rake": "Rake, $",
+    "guaranteed_dollars": "Guaranteed prize pool, $",
+    "payout_percent": "Payout distribution, %",
+    "starting_stack": "Starting chips",
+    "starting_stack_bb": "Starting chips, BB",
+    "timezone": "Timezone",
+    "starting_time": "Starting time",
+    "late_registration_available": "Late registration available",
+    "late_reg_at": "Late registration closes at",
+    "late_reg_level": "Late registration level",
+    "blind_interval_minutes": "Blind interval, min",
+    "break_minutes": "Break time, min",
+    "players_per_table": "Players per table",
+    "players_at_final_table": "Players at the final table",
+    "min_players": "Min players",
+    "max_players": "Max players",
+    "re_entry": "Re-entry",
+    "bubble": "Bubble",
+    "periodicity": "Periodicity",
+    "weekdays": "Active weekdays",
+    "early_bird": "Early bird (computed)",
+    "early_bird_type": "Early bird",
+    "featured_final_table": "Featured final table",
+    "deal_making": "Deal making",
+    "is_bounty": "Bounty (computed)",
+    "bounty_type": "Bounty",
+    "min_bounty": "Minimum bounty, $",
+    "blind_structure": "Blind structure",
+}
+
 
 class SeriesWidget(ForeignKeyWidget):
     """Resolve a `TournamentSeries` by name, scoped to the row's room.
@@ -48,7 +93,8 @@ class SeriesWidget(ForeignKeyWidget):
     def clean(self, value, row=None, **kwargs):
         if value in (None, ""):
             return None
-        room_name = (row or {}).get("room")
+        # Rows are keyed by column header (the admin label), not field name.
+        room_name = (row or {}).get(COLUMN_LABELS["room"])
         qs = self.model.objects.filter(name=value)
         if room_name:
             qs = qs.filter(room__name=room_name)
@@ -138,6 +184,25 @@ class TournamentResource(resources.ModelResource):
         super().__init__(**kwargs)
         self._user = user
         self._template_name_cache: dict[int, str] | None = None
+        # Relabel every column with its admin-form header (used for both the
+        # export header row and import column matching).
+        for field_name, label in COLUMN_LABELS.items():
+            if field_name in self.fields:
+                self.fields[field_name].column_name = label
+
+    def before_import(self, dataset, **kwargs):
+        # Reject files that aren't a tournament export: every expected header
+        # must be present. Surfaces as a clear error on the import preview page
+        # instead of a cryptic per-row failure deep in the mapping.
+        super().before_import(dataset, **kwargs)
+        required = {self.fields[name].column_name for name in self._meta.fields}
+        missing = required - set(dataset.headers or [])
+        if missing:
+            raise ValueError(
+                "This file does not match the tournament export format. "
+                "Missing columns: " + ", ".join(sorted(missing)) + ". "
+                "Export the tournaments first and fill in that file."
+            )
 
     class Meta:
         model = Tournament
