@@ -135,6 +135,9 @@ class TournamentAdmin(ImportExportMixin, StaffAdminMixin, admin.ModelAdmin):
     # Export hardens the file (locked id/header + option dropdowns); import reads
     # it back unchanged. See xlsx_export.LockedDropdownXLSX.
     formats = (LockedDropdownXLSX,)
+    # Skip the field-selection page: the Export button downloads the xlsx straight
+    # away with all resource fields, since there's only one format anyway.
+    skip_export_form = True
 
     class Media:
         js = (

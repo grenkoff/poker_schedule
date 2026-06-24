@@ -1,9 +1,10 @@
 """Excel round-trip of tournaments via TournamentResource (django-import-export).
 
 Covers: export uses human-readable FK values, import creates rows and recomputes
-the derived columns (buy_in_total / is_bounty / early_bird / verified_by_admin),
-import updates by id without duplicating, a clean round-trip reports no errors, and
-a series that belongs to a different room is rejected as a row error.
+the derived columns (buy_in_total / is_bounty / early_bird, plus verified_by_admin
+which is recomputed but never exported), import updates by id without duplicating,
+a clean round-trip reports no errors, and a series that belongs to a different room
+is rejected as a row error.
 """
 
 from datetime import timedelta
@@ -100,7 +101,13 @@ def _dataset_from_rows(rows: list[dict]) -> tablib.Dataset:
 def test_admin_import_export_pages_render(admin_client):
     # The ImportExportMixin adds these views; a 200 confirms the buttons are wired.
     assert admin_client.get("/admin/tournaments/tournament/import/").status_code == 200
-    assert admin_client.get("/admin/tournaments/tournament/export/").status_code == 200
+    # Export skips the field-selection form: the button downloads the xlsx directly.
+    resp = admin_client.get("/admin/tournaments/tournament/export/")
+    assert resp.status_code == 200
+    assert resp["Content-Type"] == (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert "attachment" in resp["Content-Disposition"]
 
 
 @pytest.mark.django_db
@@ -209,9 +216,12 @@ def test_export_locks_id_and_adds_dropdowns(superuser, series):
     assert ws.cell(row=2, column=room_col).protection.locked is False
 
     # Columns recomputed on import are locked too — editing them has no effect.
-    for computed in ("buy_in_total", "is_bounty", "early_bird", "verified_by_admin"):
+    for computed in ("buy_in_total", "is_bounty", "early_bird"):
         col = headers.index(computed) + 1
         assert ws.cell(row=2, column=col).protection.locked is True, computed
+
+    # verified_by_admin is recomputed on import but never exported.
+    assert "verified_by_admin" not in headers
 
     # Read-only columns are grey-shaded; editable ones aren't.
     assert ws.cell(row=2, column=id_col).fill.fill_type == "solid"

@@ -5,9 +5,9 @@ or attach dropdowns. So this format runs the tablib output back through openpyxl
 to add two editor affordances, then hands the bytes onward unchanged:
 
 * The ``id`` column, the columns recomputed on import (``buy_in_total``,
-  ``is_bounty``, ``early_bird``, ``verified_by_admin``), and the header row are
-  locked (sheet protection on, every other cell — plus a buffer of empty rows
-  for new tournaments — left editable). ``id`` is the import match key (see
+  ``is_bounty``, ``early_bird``), and the header row are locked (sheet protection
+  on, every other cell — plus a buffer of empty rows for new tournaments — left
+  editable). ``id`` is the import match key (see
   ``TournamentResource.import_id_fields``) so hand-editing it silently
   overwrites the wrong row; the computed columns are overwritten on import so
   editing them has no effect; renaming a header breaks the column→field mapping.
@@ -61,7 +61,6 @@ _COMPUTED_COLUMNS = (
     "buy_in_total",
     "is_bounty",
     "early_bird",
-    "verified_by_admin",
 )
 
 # Extra empty rows below the data kept editable (and dropdown-equipped) so an
@@ -259,8 +258,8 @@ def _add_instruction_sheet(wb) -> None:
         ("", False),
         ("Серый фон = только для чтения.", True),
         (
-            "Серые колонки (id, buy_in_total, is_bounty, early_bird, verified_by_admin) "
-            "заблокированы и заполняются автоматически — менять их вручную бесполезно.",
+            "Серые колонки (id, buy_in_total, is_bounty, early_bird) заблокированы "
+            "и заполняются автоматически — менять их вручную бесполезно.",
             False,
         ),
         ("", False),
