@@ -18,6 +18,7 @@ from import_export.widgets import DateTimeWidget, ForeignKeyWidget
 from apps.rooms.models import PokerRoom
 
 from .models import (
+    BlindStructureTemplate,
     BountyOption,
     BubbleOption,
     DealMakingOption,
@@ -26,6 +27,8 @@ from .models import (
     ReEntryOption,
     Tournament,
     TournamentSeries,
+    blind_signature,
+    template_id_for_signature,
 )
 
 _DT_FORMAT = "%Y-%m-%d %H:%M"
@@ -52,6 +55,26 @@ class SeriesWidget(ForeignKeyWidget):
         obj = qs.first()
         if obj is None:
             raise ValueError(f"Tournament series '{value}' not found for room '{room_name}'.")
+        return obj
+
+
+class BlindStructureWidget(ForeignKeyWidget):
+    """Resolve a `BlindStructureTemplate` by its name for import.
+
+    Used only on the import side: a recognised name lets the import apply that
+    template's levels to the tournament (see `TournamentResource`). Export fills
+    the column via `dehydrate_blind_structure` instead.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(BlindStructureTemplate, field="name")
+
+    def clean(self, value, row=None, **kwargs):
+        if value in (None, ""):
+            return None
+        obj = self.model.objects.filter(name=value).first()
+        if obj is None:
+            raise ValueError(f"Blind structure '{value}' not found.")
         return obj
 
 
@@ -102,10 +125,19 @@ class TournamentResource(resources.ModelResource):
         column_name="late_reg_at",
         widget=DateTimeWidget(format=_DT_FORMAT),
     )
+    # Not a model field: import sets it to the resolved template (transient attr)
+    # and `after_save_instance` copies its levels onto the tournament; export
+    # fills the cell from the matching template name via `dehydrate_blind_structure`.
+    blind_structure = fields.Field(
+        attribute="blind_structure",
+        column_name="blind_structure",
+        widget=BlindStructureWidget(),
+    )
 
     def __init__(self, user=None, **kwargs):
         super().__init__(**kwargs)
         self._user = user
+        self._template_name_cache: dict[int, str] | None = None
 
     class Meta:
         model = Tournament
@@ -152,6 +184,7 @@ class TournamentResource(resources.ModelResource):
             "is_bounty",
             "bounty_type",
             "min_bounty",
+            "blind_structure",
         )
         export_order = fields
 
@@ -168,3 +201,35 @@ class TournamentResource(resources.ModelResource):
         # Match TournamentAdmin.save_model: only a superuser's edits are trusted
         # as verified.
         instance.verified_by_admin = bool(self._user and self._user.is_superuser)
+
+    def after_save_instance(self, instance, row, **kwargs):
+        # The blind-structure column resolves to a template (transient attr set
+        # by the field's widget). Copy its levels onto the now-saved tournament,
+        # mirroring TournamentAdmin's "apply template" path. Skipped on dry-run,
+        # when the instance may not be persisted.
+        if kwargs.get("dry_run"):
+            return
+        template = getattr(instance, "blind_structure", None)
+        if template is not None:
+            template.apply_to(instance)
+
+    def dehydrate_blind_structure(self, obj) -> str:
+        # Export the name of the template matching the tournament's current
+        # blind levels (every saved structure is auto-registered as a template,
+        # so this normally resolves). Blank when there are no levels / no match.
+        if not obj.pk:
+            return ""
+        rows = list(obj.blind_levels.all())
+        if not rows:
+            return ""
+        tpl_id = template_id_for_signature(blind_signature(rows))
+        if tpl_id is None:
+            return ""
+        return self._template_names().get(tpl_id, "")
+
+    def _template_names(self) -> dict[int, str]:
+        if self._template_name_cache is None:
+            self._template_name_cache = dict(
+                BlindStructureTemplate.objects.values_list("id", "name")
+            )
+        return self._template_name_cache

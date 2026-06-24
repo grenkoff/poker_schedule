@@ -18,6 +18,8 @@ from django.utils import timezone
 
 from apps.rooms.models import Network, PokerRoom
 from apps.tournaments.models import (
+    BlindStructure,
+    BlindStructureTemplate,
     BountyOption,
     BubbleOption,
     EarlyBirdType,
@@ -270,6 +272,74 @@ def test_series_dropdown_cascades_from_room(superuser, series):
     ]
     assert len(series_dvs) == 1
     assert series_dvs[0].formula1 == f"INDIRECT(${room_letter}2)"
+
+
+def _give_blinds(tournament) -> None:
+    BlindStructure.objects.create(
+        tournament=tournament, level=1, small_blind=50, big_blind=100, ante=0
+    )
+    BlindStructure.objects.create(
+        tournament=tournament, level=2, small_blind=100, big_blind=200, ante=25
+    )
+
+
+@pytest.mark.django_db
+def test_export_includes_blind_structure_name(superuser, series):
+    import openpyxl
+    from openpyxl.utils import get_column_letter
+
+    t = _make_tournament(series)
+    _give_blinds(t)
+    BlindStructureTemplate.create_from_tournament(t, name="Test Struct [abc123]")
+
+    ds = _export_dataset(superuser, Tournament.objects.filter(pk=t.pk))
+    assert _row_as_dict(ds)["blind_structure"] == "Test Struct [abc123]"
+
+    # The column also carries a dropdown of template names.
+    content = LockedDropdownXLSX().export_data(ds)
+    wb = openpyxl.load_workbook(BytesIO(content))
+    ws = wb.active
+    headers = [c.value for c in ws[1]]
+    bs_letter = get_column_letter(headers.index("blind_structure") + 1)
+    validated = " ".join(str(dv.sqref) for dv in ws.data_validations.dataValidation)
+    assert bs_letter in validated
+
+
+@pytest.mark.django_db
+def test_import_applies_blind_structure(superuser, series):
+    source = _make_tournament(series)
+    _give_blinds(source)
+    BlindStructureTemplate.create_from_tournament(source, name="Import Struct [def456]")
+
+    ds = _export_dataset(superuser, Tournament.objects.filter(pk=source.pk))
+    row = _row_as_dict(ds)
+    row["id"] = ""
+    row["name"] = "Imported with blinds"
+    row["blind_structure"] = "Import Struct [def456]"
+
+    result = TournamentResource(user=superuser).import_data(
+        _dataset_from_rows([row]), dry_run=False
+    )
+    assert not result.has_errors(), result.row_errors()
+
+    created = Tournament.objects.get(name="Imported with blinds")
+    levels = list(
+        created.blind_levels.order_by("level").values_list("small_blind", "big_blind", "ante")
+    )
+    assert levels == [(50, 100, 0), (100, 200, 25)]
+
+
+@pytest.mark.django_db
+def test_import_unknown_blind_structure_row_errors(superuser, series):
+    template = _make_tournament(series)
+    ds = _export_dataset(superuser, Tournament.objects.filter(pk=template.pk))
+    row = _row_as_dict(ds)
+    row["id"] = ""
+    row["name"] = "Bad blinds"
+    row["blind_structure"] = "no-such-structure"
+
+    result = TournamentResource(user=superuser).import_data(_dataset_from_rows([row]), dry_run=True)
+    assert result.has_validation_errors()
 
 
 @pytest.mark.django_db

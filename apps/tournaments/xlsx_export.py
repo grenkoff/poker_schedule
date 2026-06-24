@@ -53,6 +53,7 @@ _DROPDOWN_COLUMNS = (
     "bounty_type",
     "early_bird_type",
     "deal_making",
+    "blind_structure",
 )
 
 # Columns recomputed on import (see TournamentResource.before_save_instance), so
@@ -81,6 +82,7 @@ def _dropdown_options() -> dict[str, list[str]]:
     from apps.rooms.models import PokerRoom
 
     from .models import (
+        BlindStructureTemplate,
         BountyOption,
         BubbleOption,
         DealMakingOption,
@@ -102,6 +104,9 @@ def _dropdown_options() -> dict[str, list[str]]:
         "bounty_type": _names(BountyOption),
         "early_bird_type": _names(EarlyBirdType),
         "deal_making": _names(DealMakingOption),
+        "blind_structure": list(
+            BlindStructureTemplate.objects.order_by("name").values_list("name", flat=True)
+        ),
     }
 
 
@@ -227,6 +232,10 @@ def _harden_workbook(content: bytes) -> bytes:
         "Сначала выберите room — затем здесь появится список серий этой комнаты. "
         "Пока room пустой, список недоступен."
     )
+    notes["blind_structure"] = (
+        "Выберите название структуры блайндов из списка. При импорте её уровни "
+        "подставятся в турнир автоматически."
+    )
     notes["starting_time"] = "Формат: ГГГГ-ММ-ДД ЧЧ:ММ, например 2026-06-22 19:30."
     notes["late_reg_at"] = notes["starting_time"]
     for name, text in notes.items():
@@ -273,7 +282,14 @@ def _add_instruction_sheet(wb) -> None:
         ("Колонки с выпадающим списком", True),
         (
             "room, game_type, re_entry, bubble, periodicity, bounty_type, early_bird_type, "
-            "deal_making — выбирайте значение из списка, не вводите вручную.",
+            "deal_making, blind_structure — выбирайте значение из списка, не вводите вручную.",
+            False,
+        ),
+        ("", False),
+        ("blind_structure", True),
+        (
+            "Выберите название структуры блайндов. При импорте уровни этой структуры "
+            "автоматически подставятся в турнир.",
             False,
         ),
         ("", False),
